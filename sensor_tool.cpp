@@ -7,34 +7,30 @@
 
 // Must compile with -lsensors
 
-int main(void) {
-	std::cout << "The program lives" << std::endl;
+#define CHIP_NAME_BUFFER_SIZE 200
 
-	auto const error = sensors_init(NULL);
-	if(error != 0) {
-		std::cerr << "LibSensors library did not initialize properly! Aborting..." << std::endl;
-		exit(1);
-	}
-	// Fetch library version
-	std::cout << "Using libsensors v" << libsensors_version << std::endl;
-
+void collect_cpu(void) {
 	// Try to fetch chips?
 	int nr = 0;
+	char chip_name[CHIP_NAME_BUFFER_SIZE];
 	auto name = sensors_get_detected_chips(nullptr, &nr);
 	while (name) {
-		char chip_name[200];
-		sensors_snprintf_chip_name(chip_name, 200, name);
+		// Clear chip name buffer
+        memset(chip_name, 0, CHIP_NAME_BUFFER_SIZE);
+        sensors_snprintf_chip_name(chip_name, CHIP_NAME_BUFFER_SIZE, name);
 		if (strcmp(chip_name, "k10temp-pci-00cb") != 0) { // DEBUG ONLY: Limit output to single chip
 			name = sensors_get_detected_chips(nullptr, &nr);
 			continue;
 		}
-		std::cout << chip_name << std::endl;
+		// TODO: Guard to output as lm-sensors format rather than CSV
+        // TODO: Separate execution path to output as CSV only
+        std::cout << chip_name << std::endl;
 		const char *adap = sensors_get_adapter_name(&name->bus);
 		std::cout << "Adapter: " << adap << std::endl;
 		int nr2 = 0;
 		auto feat = sensors_get_features(name, &nr2);
 		while (feat) {
-			if (feat->type != 2) { // SENSORS_FEATURE_TEMP
+			if (feat->type != SENSORS_FEATURE_TEMP) { // SENSORS_FEATURE_TEMP features have the temperature data
 				feat = sensors_get_features(name, &nr2);
 				continue;
 			}
@@ -75,7 +71,26 @@ int main(void) {
 		}
 		name = sensors_get_detected_chips(nullptr, &nr);
 	}
+}
+
+int main(void) {
+	std::cout << "The program lives" << std::endl;
+	auto const error = sensors_init(NULL);
+	if(error != 0) {
+		std::cerr << "LibSensors library did not initialize properly! Aborting..." << std::endl;
+		exit(1);
+	}
+
+    // TODO: Command line argument parsing
+
+    // TODO: Guard this output behind argument to check versions
+	// Fetch library version
+	std::cout << "Using libsensors v" << libsensors_version << std::endl;
+
+    collect_cpu();
+
 
 	std::cout << "The program ends" << std::endl;
 	return 0;
 }
+
