@@ -1,9 +1,13 @@
 #include <stdio.h>
+#include <stdlib.h>
 #include <iostream>
 #include <iomanip>
 #include <cstring>
 #include <chrono>
 #include <thread>
+#include <unistd.h> // Getopt
+#include <getopt.h> // Getopt-long
+#include <cstdlib>
 #include <sensors/sensors.h> // Must compile with -lsensors
 
 #include <cuda.h> // Must compile with -lcuda
@@ -13,6 +17,82 @@
 #include "safecuda.h" // Macros to do safe cuda calls
 
 #define CHIP_NAME_BUFFER_SIZE 200
+
+// Argument values stored here
+typedef struct argstruct {
+    short help = 0,
+          cpu = 0,
+          gpu = 0;
+    char* log = 0;
+    double poll = 0.;
+} arguments;
+
+/* Read command line and parse arguments
+   Pointer args used to store semantic settings for program execution
+ */
+void parse(int argc, char** argv, arguments* args) {
+    char* PROGNAME = argv[0];
+    int c;
+
+    // Getopt option declarations
+    static struct option long_options[] = {
+        {"help", no_argument, 0, 'h'},
+        {"cpu", no_argument, 0, 'c'},
+        {"gpu", no_argument, 0, 'g'},
+        {"log", required_argument, 0, 'l'},
+        {"poll", required_argument, 0, 'p'},
+        {0,0,0,0}
+    };
+    opterr = 0; // Disable getopt's automatic error message -- we'll catch it via the '?' return and shut down
+
+    // Parsing loop
+    while (1) {
+        int this_option_optind = optind ? optind : 1;
+        int option_index = 0;
+        c = getopt_long(argc, argv, "hcgl:p:", long_options, &option_index);
+        if (c == -1) break;
+        switch (c) {
+            case 0:
+                printf("Weird option %s", long_options[option_index].name);
+                if (optarg) printf(" with arg %s", optarg);
+                printf("\n");
+                break;
+            case 'h':
+                std::cout << "Usage: " << PROGNAME << " [options]" << std::endl;
+                std::cout << "\t-h | --help\n\t\t" <<
+                             "Print this help message and exit" << std::endl;
+                std::cout << "\t-c | --cpu\n\t\t" <<
+                             "Query CPU stats only (default: CPU and GPU)" << std::endl;
+                std::cout << "\t-g | --gpu\n\t\t" <<
+                             "Query GPU stats only (default: GPU and CPU)" << std::endl;
+                std::cout << "\t-l [file] | --log [file]\n\t\t" <<
+                             "File to write output to" << std::endl;
+                std::cout << "\t-p [interval] | --poll [interval]\n\t\t" <<
+                             "Floating point interval in seconds to poll stats (interval > 0)" << std::endl;
+                exit(EXIT_SUCCESS);
+            case 'c':
+                args->cpu = 1;
+                break;
+            case 'g':
+                args->gpu = 1;
+                break;
+            case 'l':
+                args->log = optarg;
+                break;
+            case 'p':
+                args->poll = atof(optarg);
+                break;
+            case '?':
+                std::cerr << "Unrecognized argument: " << argv[optind-1] << std::endl;
+                exit(EXIT_FAILURE);
+                break;
+        }
+    }
+    if (optind < argc) {
+        std::cerr << "Unrecognized additional arguments!" << std::endl;
+        exit(EXIT_FAILURE);
+    }
+}
 
 void collect_cpu(void) {
 	// Try to fetch chips?
@@ -101,6 +181,19 @@ void collect_gpu(void) {
         nvmlDeviceGetHandleByIndex_v2(static_cast<unsigned int>(i), &device);
         nvmlDeviceGetTemperature(device, NVML_TEMPERATURE_GPU, &temperature);
         std::cout << "Device " << i << " Temperature: " << temperature << std::endl;
+
+        // NVML Unit?
+        nvmlUnit_t unit;
+        nvmlUnitGetHandleByIndex(static_cast<unsigned int>(i), &unit);
+        nvmlUnitGetTemperature(unit, 0, &temperature);
+        std::cout << "\tDevice " << i << " Intake Temperature: " << temperature << std::endl;
+        nvmlUnitGetTemperature(unit, 1, &temperature);
+        std::cout << "\tDevice " << i << " Exhaust Temperature: " << temperature << std::endl;
+        nvmlUnitGetTemperature(unit, 2, &temperature);
+        std::cout << "\tDevice " << i << " Board Temperature: " << temperature << std::endl;
+        nvmlDeviceGetTemperature(device, NVML_TEMPERATURE_COUNT, &temperature);
+        std::cout << "\t\tDevice " << i << " NVML Temp count " << NVML_TEMPERATURE_COUNT << std::endl;
+
         nvmlDeviceGetPowerUsage(device, &powerUsage);
         std::cout << "Device " << i << " Power Usage: " << powerUsage << std::endl;
         nvmlDeviceGetEnforcedPowerLimit(device, &powerLimit);
@@ -123,8 +216,21 @@ void collect_gpu(void) {
     */
 }
 
-int main(void) {
-	std::cout << "The program lives" << std::endl;
+int main(int argc, char** argv) {
+	arguments args;
+    parse(argc, argv, &args);
+    std::cout << "The program lives" << std::endl;
+    std::cout << "Arguments evaluate to" << std::endl;
+    std::cout << "Help: " << args.help << std::endl;
+    std::cout << "CPU: " << args.cpu << std::endl;
+    std::cout << "GPU: " << args.gpu << std::endl;
+    if (args.log == 0) {
+        std::cout << "Log: NONE" << std::endl;
+    } else {
+        std::cout << "Log: " << args.log << std::endl;
+    }
+    std::cout << "Poll: " << args.poll << std::endl;
+    //exit(EXIT_SUCCESS);
 	auto const error = sensors_init(NULL);
 	if(error != 0) {
 		std::cerr << "LibSensors library did not initialize properly! Aborting..." << std::endl;
