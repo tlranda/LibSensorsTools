@@ -7,6 +7,7 @@
 #include <getopt.h> // Getopt-long
 #include <signal.h> // signal interrupts
 #include <sensors/sensors.h> // Must compile with -lsensors
+#include <vector> // Cache chips/gpus for repeated lookup
 
 #include <cuda.h> // Must compile with -lcuda
 #include <cuda_runtime.h> // Must compile with -lcudart
@@ -30,7 +31,8 @@ typedef struct argstruct {
     short help = 0,
           cpu = 0,
           gpu = 0,
-          debug = 0;
+          debug = 0,
+          format = 0;
     char* log = 0;
     double poll = 0.;
     std::chrono::duration<double> duration;
@@ -52,12 +54,13 @@ void parse(int argc, char** argv) {
         {"help", no_argument, 0, 'h'},
         {"cpu", no_argument, 0, 'c'},
         {"gpu", no_argument, 0, 'g'},
+        {"full-format", no_argument, 0, 'f'},
         {"log", required_argument, 0, 'l'},
         {"poll", required_argument, 0, 'p'},
         {"debug", required_argument, 0, 'd'},
         {0,0,0,0}
     };
-    const char* optionstr = "hcgl:p:d:";
+    const char* optionstr = "hcgfl:p:d:";
     // Disable getopt's automatic error message -- we'll catch it via the '?' return and shut down
     opterr = 0;
 
@@ -81,6 +84,8 @@ void parse(int argc, char** argv) {
                              "Query CPU stats only (default: CPU and GPU)" << std::endl;
                 std::cout << "\t-g | --gpu\n\t\t" <<
                              "Query GPU stats only (default: GPU and CPU)" << std::endl;
+                std::cout << "\t-f | --full-format\n\t\t" <<
+                             "Output in full text rather than CSV format" << std::endl;
                 std::cout << "\t-l [file] | --log [file]\n\t\t" <<
                              "File to write output to" << std::endl;
                 std::cout << "\t-p [interval] | --poll [interval]\n\t\t" <<
@@ -93,6 +98,9 @@ void parse(int argc, char** argv) {
                 break;
             case 'g':
                 args.gpu = 1;
+                break;
+            case 'f':
+                args.format = 1;
                 break;
             case 'l':
                 args.log = optarg;
@@ -144,6 +152,100 @@ void parse(int argc, char** argv) {
 }
 
 
+void print_header(void) {
+}
+
+typedef struct cpu_cache_t {
+    char chip_name[NAME_BUFFER_SIZE] = {0};
+    int nr = 0;
+    const sensors_chip_name* name = nullptr;
+    std::vector<const sensors_feature*> features;
+    std::vector<const sensors_subfeature*> subfeatures;
+    std::vector<double> last_read;
+} cpu_cache;
+
+std::vector<cpu_cache> known_cpus;
+
+void cache_cpus(void) {
+    // No caching if we aren't going to query the CPUs
+    if (!args.cpu) return;
+
+    int nr_name = 0, nr_feature;
+    sensors_subfeature_type nr_subfeature = SENSORS_SUBFEATURE_TEMP_INPUT;
+    double value;
+
+    // Exits when no additional chips can be read from sensors library
+    while (1) {
+        // Reset sub-iterators
+        nr_feature = 0;
+        nr_subfeature = SENSORS_SUBFEATURE_TEMP_INPUT;
+
+        // Prepare candidate
+        cpu_cache candidate;
+        candidate.nr = nr_name;
+        const sensors_chip_name* temp_name = sensors_get_detected_chips(nullptr, &nr_name);
+
+        // No more chips to read -- exit function
+        if (!temp_name) return;
+
+        // Clear and copy into candidate
+        memset(candidate.chip_name, 0, NAME_BUFFER_SIZE);
+        sensors_snprintf_chip_name(candidate.chip_name, NAME_BUFFER_SIZE, temp_name);
+        candidate.name = temp_name;
+        if (args.debug >= DebugVerbose) {
+            std::cerr << "Begin caching chip " << candidate.chip_name << std::endl;
+        }
+
+        // Feature determination
+        const sensors_feature* temp_feature = sensors_get_features(temp_name, &nr_feature);
+        while(temp_feature) {
+            if (args.debug >= DebugVerbose) {
+                std::cerr << "\tInspect feature " << nr_feature << " with type " << temp_feature->type << " (hit on type == " << SENSORS_FEATURE_TEMP << ")" << std::endl;
+            }
+            // We only care about this type of feature
+            if (temp_feature->type == SENSORS_FEATURE_TEMP) {
+                candidate.features.push_back(temp_feature);
+                // Skip directly to input subfeature value
+                const sensors_subfeature* temp_subfeature = sensors_get_subfeature(temp_name, temp_feature, nr_subfeature);
+                if (args.debug >= DebugVerbose) {
+                    std::cerr << "\t\tFeature hit. Acquiring temperature subfeature " << nr_subfeature << std::endl;
+                }
+                candidate.subfeatures.push_back(temp_subfeature);
+                sensors_get_value(temp_name, temp_subfeature->number, &value);
+                if (args.debug >= DebugVerbose) {
+                    std::cerr << "\t\t\tTemperature value read: " << value << std::endl;
+                }
+                candidate.last_read.push_back(value);
+            }
+            temp_feature = sensors_get_features(temp_name, &nr_feature);
+        }
+        if (args.debug >= DebugVerbose) {
+            std::cerr << "Finished inspecting chip " << candidate.chip_name;
+        }
+        if (!candidate.last_read.empty()) {
+            known_cpus.push_back(candidate);
+            if (args.debug >= DebugVerbose) {
+                std::cerr << " , added to known CPUs" << std::endl;
+            }
+        }
+        else if (args.debug >= DebugVerbose) {
+            std::cerr << " , but discarded due to empty temperature reads" << std::endl;
+        }
+    }
+}
+
+void update_cpus(void) {
+    for (std::vector<cpu_cache>::iterator i = known_cpus.begin(); i != known_cpus.end(); i++)
+        for (int j = 0; j < i->last_read.size(); j++) {
+            double prev = i->last_read[j];
+            sensors_get_value(i->name, i->subfeatures[j]->number, &i->last_read[j]);
+            if (args.debug >= DebugVerbose) {
+                std::cout << "Chip " << i->chip_name << " temp BEFORE " << prev << " NOW " << i->last_read[j] << std::endl;
+            }
+        }
+}
+
+
 void collect_cpu(void) {
 	// Try to fetch chips?
 	int nr = 0;
@@ -153,10 +255,11 @@ void collect_cpu(void) {
 		// Clear chip name buffer
         memset(chip_name, 0, NAME_BUFFER_SIZE);
         sensors_snprintf_chip_name(chip_name, NAME_BUFFER_SIZE, name);
-		if (strcmp(chip_name, "k10temp-pci-00cb") != 0) { // DEBUG ONLY: Limit output to single chip
+		/* if (strcmp(chip_name, "k10temp-pci-00cb") != 0) { // DEBUG ONLY: Limit output to single chip
 			name = sensors_get_detected_chips(nullptr, &nr);
 			continue;
-		}
+		} */
+
 		// TODO: Guard to output as lm-sensors format rather than CSV
         // TODO: Separate execution path to output as CSV only
         std::cout << chip_name << std::endl;
@@ -327,10 +430,13 @@ int main(int argc, char** argv) {
         std::cout << "Using NVML Driver v" << NVML_DRIVER_VERSION << std::endl;
     }
 
+    // Hardware Detection / caching for faster updates
+    cache_cpus();
+
     // Main Loop
     while (1) {
         // Collection
-        if (args.cpu) collect_cpu();
+        if (args.cpu) update_cpus(); // collect_cpu();
         if (args.gpu) collect_gpu();
         // Sleeping between polls
         if (args.poll == 0) break;
