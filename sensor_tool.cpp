@@ -206,10 +206,6 @@ void parse(int argc, char** argv) {
 }
 
 
-void print_header(void) {
-}
-
-
 typedef struct cpu_cache_t {
     // IDs
     char chip_name[NAME_BUFFER_SIZE] = {0};
@@ -305,72 +301,6 @@ void update_cpus(void) {
 }
 
 
-void collect_cpu(void) {
-	// Try to fetch chips?
-	int nr = 0;
-	char chip_name[NAME_BUFFER_SIZE];
-	auto name = sensors_get_detected_chips(nullptr, &nr);
-	while (name) {
-		// Clear chip name buffer
-        memset(chip_name, 0, NAME_BUFFER_SIZE);
-        sensors_snprintf_chip_name(chip_name, NAME_BUFFER_SIZE, name);
-		/* if (strcmp(chip_name, "k10temp-pci-00cb") != 0) { // DEBUG ONLY: Limit output to single chip
-			name = sensors_get_detected_chips(nullptr, &nr);
-			continue;
-		} */
-
-		// TODO: Guard to output as lm-sensors format rather than CSV
-        // TODO: Separate execution path to output as CSV only
-        args.log << chip_name << std::endl;
-		const char *adap = sensors_get_adapter_name(&name->bus);
-		args.log << "Adapter: " << adap << std::endl;
-		int nr2 = 0;
-		auto feat = sensors_get_features(name, &nr2);
-		while (feat) {
-			if (feat->type != SENSORS_FEATURE_TEMP) { // SENSORS_FEATURE_TEMP features have the temperature data
-				feat = sensors_get_features(name, &nr2);
-				continue;
-			}
-			args.log << sensors_get_label(name, feat) << ":\t";
-			// args.log << "\tFound feature " << sensors_get_label(name, feat) << std::endl;
-			// EXPLICITLY FETCH TEMPS LIKE SENSORS ITSELF
-			auto nr3 = SENSORS_SUBFEATURE_TEMP_INPUT;
-			auto sub = sensors_get_subfeature(name, feat, SENSORS_SUBFEATURE_TEMP_INPUT);
-			double value;
-			int errno2;
-			errno2 = sensors_get_value(name, sub->number, &value);
-			//args.log << "+" << value << "°C (" << nr3 << ")" << std::endl;
-			const auto default_precision{args.log.precision()};
-			args.log << "+" << std::setw(1) << std::setprecision(3) << value << "°C (" << nr3 << ")" << std::endl;
-			args.log << std::setprecision(default_precision);
-			/*
-			int nr3 = 0;
-			auto sub = sensors_get_all_subfeatures(name, feat, &nr3);
-			while (sub) {
-				double value;
-				int errno2;
-				errno2 = sensors_get_value(name, nr3, &value);
-				args.log << "+" << value << "° (" << nr3 << ")" << std::endl;
-				/ *
-				if (errno2 < 0) {
-					args.log << "\t\tCould not read value of " << sub->name << " (" << sub->type << ")" << std::endl;
-					args.log << "\t\t\tThe error code is " << errno2 << std::endl;
-					args.log << "\t\t\tBut if I could it'd be " << value << std::endl;
-				}
-				else {
-					args.log << "\t\tValue of " << sub->name << " (" << sub->type << "): " << value << std::endl;
-				}
-				* /
-				sub = sensors_get_all_subfeatures(name, feat, &nr3);
-			}
-			*/
-			feat = sensors_get_features(name, &nr2);
-		}
-		name = sensors_get_detected_chips(nullptr, &nr);
-	}
-}
-
-
 typedef struct gpu_cache_t {
     // IDs
     int device_ID;
@@ -441,65 +371,8 @@ void update_gpus(void) {
     }
 }
 
-typedef struct stats_ {
-    std::time_t timestamp;
-    uint temperature;
-    uint powerUsage;
-    uint powerLimit;
-    nvmlUtilization_t utilization; // ui gpu | ui memory (both %)
-    nvmlMemory_t memory; // ull free | ull total | ull used (all bytes)
-    nvmlPstates_t performanceState;
-} stats;
 
-
-
-void collect_gpu(void) {
-    int n_devices;
-    CHECK_CUDA_ERROR(cudaGetDeviceCount(&n_devices));
-    args.log << "Found " << n_devices+1 << " GPUs" << std::endl;
-    for (int i = 0; i <= n_devices; i++) {
-        uint temperature, powerUsage, powerLimit;
-        nvmlUtilization_t utilization; // ui gpu | ui memory (both as %)
-        nvmlMemory_t memory; // ull free | ull total | ull used (all as bytes)
-        nvmlPstates_t performanceState;
-        nvmlDevice_t device;
-        nvmlDeviceGetHandleByIndex_v2(static_cast<unsigned int>(i), &device);
-        nvmlDeviceGetTemperature(device, NVML_TEMPERATURE_GPU, &temperature);
-        args.log << "Device " << i << " Temperature: " << temperature << std::endl;
-
-        // NVML Unit?
-        // BEN: Units only supported by S-class cards; we're not using those so any nvmlUnit* calls don't work
-        nvmlUnit_t unit;
-        nvmlUnitGetHandleByIndex(static_cast<unsigned int>(i), &unit);
-        nvmlUnitGetTemperature(unit, 0, &temperature);
-        args.log << "\tDevice " << i << " Intake Temperature: " << temperature << std::endl;
-        nvmlUnitGetTemperature(unit, 1, &temperature);
-        args.log << "\tDevice " << i << " Exhaust Temperature: " << temperature << std::endl;
-        nvmlUnitGetTemperature(unit, 2, &temperature);
-        args.log << "\tDevice " << i << " Board Temperature: " << temperature << std::endl;
-        nvmlDeviceGetTemperature(device, NVML_TEMPERATURE_COUNT, &temperature);
-        args.log << "\t\tDevice " << i << " NVML Temp count " << NVML_TEMPERATURE_COUNT << std::endl;
-
-        nvmlDeviceGetPowerUsage(device, &powerUsage);
-        args.log << "Device " << i << " Power Usage: " << powerUsage << std::endl;
-        nvmlDeviceGetEnforcedPowerLimit(device, &powerLimit);
-        args.log << "Device " << i << " Power Limit: " << powerLimit << std::endl;
-        nvmlDeviceGetUtilizationRates(device, &utilization);
-        args.log << "Device " << i << " Utilization: [" << utilization.gpu << "\% GPU] [" << utilization.memory << "\% MEMORY]" << std::endl;
-        nvmlDeviceGetMemoryInfo(device, &memory);
-        args.log << "Device " << i << " Memory: [" << memory.used << " / " << memory.total << "] " << static_cast<double>(memory.used) / static_cast<double>(memory.total) << "%" << std::endl;
-        nvmlDeviceGetPerformanceState(device, &performanceState);
-        args.log << "Device " << i << " Performance State: " << performanceState << std::endl;
-    }
-    /*
-    auto device_;
-    NVML_RT_CALL(nvmlDeviceGetTemperature(device_, NVML_TEMPERATURE_GPU, &device_stats.temperature));
-    NVML_RT_CALL(nvmlDeviceGetPowerUsage(device, &device_stats.powerUsage));
-    NVML_RT_CALL(nvmlDeviceGetEnforcedPowerLimit(device, &device_stats.powerLimit));
-    NVML_RT_CALL(nvmlDeviceGetutilizationRates(device, &device_stats.utilization));
-    NVML_RT_CALL(nvmlDeviceGetmemoryInfo(device, &device_stats.memory));
-    NVML_RT_CALL(nvmlDeviceGetPerformanceState(device, &device_stats.performance));
-    */
+void print_header(void) {
 }
 
 
@@ -563,11 +436,14 @@ int main(int argc, char** argv) {
     cache_cpus();
     cache_gpus();
 
+    // Prepare output
+    print_header();
+
     // Main Loop
     while (1) {
         // Collection
-        if (args.cpu) update_cpus(); // collect_cpu();
-        if (args.gpu) update_gpus(); //collect_gpu();
+        if (args.cpu) update_cpus();
+        if (args.gpu) update_gpus();
         // Sleeping between polls
         if (args.poll == 0) break;
         else std::this_thread::sleep_for(args.duration);
