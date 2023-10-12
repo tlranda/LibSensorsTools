@@ -8,6 +8,7 @@
 #include <signal.h> // signal interrupts
 #include <sensors/sensors.h> // Must compile with -lsensors
 #include <vector> // Cache chips/gpus for repeated lookup
+#include <filesystem> // Manage I/O for writing to files rather than standard file descriptors
 
 #include <cuda.h> // Must compile with -lcuda
 #include <cuda_runtime.h> // Must compile with -lcudart
@@ -33,7 +34,7 @@ typedef struct argstruct {
           gpu = 0,
           debug = 0,
           format = 0;
-    char* log = 0;
+    std::filesystem::path log;
     double poll = 0.;
     std::chrono::duration<double> duration;
 } arguments;
@@ -103,7 +104,7 @@ void parse(int argc, char** argv) {
                 args.format = 1;
                 break;
             case 'l':
-                args.log = optarg;
+                args.log = std::filesystem::path(optarg);
                 break;
             case 'p':
                 args.poll = atof(optarg);
@@ -155,16 +156,20 @@ void parse(int argc, char** argv) {
 void print_header(void) {
 }
 
+
 typedef struct cpu_cache_t {
+    // IDs
     char chip_name[NAME_BUFFER_SIZE] = {0};
     int nr = 0;
     const sensors_chip_name* name = nullptr;
+    // Cached data
     std::vector<const sensors_feature*> features;
     std::vector<const sensors_subfeature*> subfeatures;
     std::vector<double> last_read;
 } cpu_cache;
 
 std::vector<cpu_cache> known_cpus;
+
 
 void cache_cpus(void) {
     // No caching if we aren't going to query the CPUs
@@ -233,6 +238,7 @@ void cache_cpus(void) {
         }
     }
 }
+
 
 void update_cpus(void) {
     for (std::vector<cpu_cache>::iterator i = known_cpus.begin(); i != known_cpus.end(); i++)
@@ -311,6 +317,76 @@ void collect_cpu(void) {
 	}
 }
 
+
+typedef struct gpu_cache_t {
+    // IDs
+    int device_ID;
+    nvmlDevice_t device_Handle;
+    // Cached data
+    uint temperature, powerUsage, powerLimit; // { degrees Celsius, Watts, Watts }
+    nvmlUtilization_t utilization; // { ui .gpu (%), .memory (%); }
+    nvmlMemory_t memory; // { ull .free (bytes), .total (bytes), .used (bytes) }
+    nvmlPstates_t pState; // { ui[0-12], 12 is lowest idle, 0 is highest intensity }
+} gpu_cache;
+
+std::vector<gpu_cache> known_gpus;
+
+
+void cache_gpus(void) {
+    // No caching if we aren't going to query the GPUs
+    if (!args.gpu) return;
+
+    int n_devices;
+    CHECK_CUDA_ERROR(cudaGetDeviceCount(&n_devices));
+
+    for (int i = 0; i <= n_devices; i++) {
+        if (args.debug >= DebugVerbose) {
+            std::cerr << "Begin caching GPU " << i << std::endl;
+        }
+        // Prepare candidate
+        gpu_cache candidate;
+        candidate.device_ID = i;
+        nvmlDeviceGetHandleByIndex_v2(static_cast<unsigned int>(i), &candidate.device_Handle);
+
+        // Initial value caching
+        nvmlDeviceGetTemperature(candidate.device_Handle, NVML_TEMPERATURE_GPU, &candidate.temperature);
+        nvmlDeviceGetPowerUsage(candidate.device_Handle, &candidate.powerUsage);
+        nvmlDeviceGetEnforcedPowerLimit(candidate.device_Handle, &candidate.powerLimit);
+        nvmlDeviceGetUtilizationRates(candidate.device_Handle, &candidate.utilization);
+        nvmlDeviceGetMemoryInfo(candidate.device_Handle, &candidate.memory);
+        nvmlDeviceGetPerformanceState(candidate.device_Handle, &candidate.pState);
+
+        if (args.debug >= DebugVerbose) {
+            std::cerr << "Finished caching GPU " << i << std::endl;
+        }
+        known_gpus.push_back(candidate);
+    }
+}
+
+void update_gpus(void) {
+    for (std::vector<gpu_cache>::iterator i = known_gpus.begin(); i != known_gpus.end(); i++) {
+        if (args.debug >= DebugVerbose) {
+            std::cout << "GPU " << i->device_ID << " BEFORE" << std::endl;
+            std::cout << "\tTemperature: " << i->temperature << std::endl;
+            std::cout << "\tPower Usage/Limit: " << i->powerUsage << " / " << i->powerLimit << std::endl;
+            std::cout << "\tUtilization: " << i->utilization.gpu << "\% GPU " << i->utilization.memory << "\% Memory " << std::endl;
+            std::cout << "\tPerformance State: " << i->pState << std::endl;
+        }
+        nvmlDeviceGetTemperature(i->device_Handle, NVML_TEMPERATURE_GPU, &i->temperature);
+        nvmlDeviceGetPowerUsage(i->device_Handle, &i->powerUsage);
+        nvmlDeviceGetEnforcedPowerLimit(i->device_Handle, &i->powerLimit);
+        nvmlDeviceGetUtilizationRates(i->device_Handle, &i->utilization);
+        nvmlDeviceGetMemoryInfo(i->device_Handle, &i->memory);
+        nvmlDeviceGetPerformanceState(i->device_Handle, &i->pState);
+        if (args.debug >= DebugVerbose) {
+            std::cout << "GPU " << i->device_ID << " AFTER" << std::endl;
+            std::cout << "\tTemperature: " << i->temperature << std::endl;
+            std::cout << "\tPower Usage/Limit: " << i->powerUsage << " / " << i->powerLimit << std::endl;
+            std::cout << "\tUtilization: " << i->utilization.gpu << "\% GPU " << i->utilization.memory << "\% Memory " << std::endl;
+            std::cout << "\tPerformance State: " << i->pState << std::endl;
+        }
+    }
+}
 
 typedef struct stats_ {
     std::time_t timestamp;
@@ -413,7 +489,7 @@ int main(int argc, char** argv) {
         "Help: " << args.help << std::endl <<
         "CPU: " << args.cpu << std::endl <<
         "GPU: " << args.gpu << std::endl;
-        if (args.log == 0) std::cout << "Log: --" << std::endl;
+        if (args.log.empty()) std::cout << "Log: --" << std::endl;
         else std::cout << "Log: " << args.log << std::endl;
         std::cout << "Poll: " << args.poll << std::endl <<
         "Debug: " << args.debug << std::endl;
@@ -432,12 +508,13 @@ int main(int argc, char** argv) {
 
     // Hardware Detection / caching for faster updates
     cache_cpus();
+    cache_gpus();
 
     // Main Loop
     while (1) {
         // Collection
         if (args.cpu) update_cpus(); // collect_cpu();
-        if (args.gpu) collect_gpu();
+        if (args.gpu) update_gpus(); //collect_gpu();
         // Sleeping between polls
         if (args.poll == 0) break;
         else std::this_thread::sleep_for(args.duration);
