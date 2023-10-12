@@ -13,12 +13,16 @@
 #include <mutex> // Let's just be safe for once
 #include <cstring> // strncopy, memset
 
+#ifdef GPU_ENABLED
 #include <cuda.h> // Must compile with -lcuda
 #include <cuda_runtime.h> // Must compile with -lcudart
 #include <nvml.h> // Must compile with -lnvidia-ml
-
-// safecuda includes <cuda.h>, <cuda_runtime.h>, <nvrtc.h>, <stdlib.h>, <stdio.h>, <cublas_v2.h>
+// safecuda includes <cuda.h>, <cuda_runtime.h>, <nvrtc.h>, <cublas_v2.h>, <stdlib.h>, <stdio.h>
 #include "safecuda.h" // Macros to do safe cuda calls
+#else
+#include <stdlib.h>
+#include <stdio.h>
+#endif
 
 // LibSensors and NVML demos typically allocate this much space for chip/driver names
 #define NAME_BUFFER_SIZE 200
@@ -67,7 +71,7 @@ public:
 
     // Permit outputting this object to streams for debug
     friend std::ostream& operator<<(std::ostream& os, const Output& obj) {
-        if (obj.fname) os << "Output[" << obj.fname << "]";
+        if (obj.fname[0]) os << "Output[" << obj.fname << "]";
         else if (obj.defaultToCout) os << "Output[std::cout]";
         else os << "Output[std::cerr]";
         return os;
@@ -366,18 +370,20 @@ void update_cpus(void) {
 typedef struct gpu_cache_t {
     // IDs
     int device_ID;
-    nvmlDevice_t device_Handle;
     char deviceName[NAME_BUFFER_SIZE] = {0};
+    #ifdef GPU_ENABLED
+    nvmlDevice_t device_Handle;
     // Cached data
     uint temperature, powerUsage, powerLimit; // { degrees Celsius, Watts, Watts }
     nvmlUtilization_t utilization; // { ui .gpu (%), .memory (%); }
     nvmlMemory_t memory; // { ull .free (bytes), .total (bytes), .used (bytes) }
     nvmlPstates_t pState; // { ui[0-12], 12 is lowest idle, 0 is highest intensity }
+    #endif
 } gpu_cache;
 
 std::vector<gpu_cache> known_gpus;
 
-
+#ifdef GPU_ENABLED
 void cache_gpus(void) {
     // No caching if we aren't going to query the GPUs
     if (!args.gpu) return;
@@ -450,7 +456,16 @@ void update_gpus(void) {
         }
     }
 }
-
+#else
+void cache_gpus(void) {
+    if (args.debug >= DebugMinimal)
+        args.error_log << "Not compiled with GPU_ENABLED definition -- no GPU support" << std::endl;
+}
+void update_gpus(void) {
+    if (args.debug >= DebugVerbose)
+        args.error_log << "No GPU updates -- Not compiled with GPU_ENABLED definition" << std::endl;
+}
+#endif
 
 // Prints the CSV header columns and immediate cached values from first read
 void print_header(void) {
@@ -462,7 +477,7 @@ void print_header(void) {
         return;
     }
     // Skip header if appending to a file that already exists
-    if ((&args.log != &std::cout) && args.log.tellp()) {
+    if ((&args.log != &std::cout) && args.log.tellp() > 0) {
         if (args.debug >= DebugVerbose)
             args.error_log << "No headers -- appending to existing file from " << args.log.tellp() << std::endl;
         return;
@@ -494,7 +509,9 @@ void print_header(void) {
 // Cleanup calls should be based on globally available information; process-killing interrupts will go through this function
 void shutdown(int s = 0) {
     if (args.debug >= DebugMinimal) args.error_log << "Run shutdown with signal " << s << std::endl;
+    #ifdef GPU_ENABLED
     nvmlShutdown();
+    #endif
     sensors_cleanup();
     if (args.debug >= DebugMinimal) args.error_log << "Shutdown clean. Exiting..." << std::endl;
     exit(EXIT_SUCCESS);
@@ -508,7 +525,9 @@ int main(int argc, char** argv) {
 		args.error_log << "LibSensors library did not initialize properly! Aborting..." << std::endl;
 		exit(EXIT_FAILURE);
 	}
+    #ifdef GPU_ENABLED
     nvmlInit();
+    #endif
 
     // Prepare shutdown via CTRL+C or other signals
     struct sigaction sigHandler;
@@ -529,22 +548,24 @@ int main(int argc, char** argv) {
         args.error_log << "Arguments evaluate to" << std::endl <<
         "Help: " << args.help << std::endl <<
         "CPU: " << args.cpu << std::endl <<
-        "GPU: " << args.gpu << std::endl;
-        if (args.log_path.empty()) args.error_log << "Log: --" << std::endl;
-        else args.error_log << "Log: " << args.log_path << std::endl;
-        args.error_log << "Poll: " << args.poll << std::endl <<
+        "GPU: " << args.gpu << std::endl <<
+        "Log: " << args.log << std::endl <<
+        "Error log: " << args.error_log << std::endl <<
+        "Poll: " << args.poll << std::endl <<
         "Debug: " << args.debug << std::endl;
     }
 
     // Denote library versions
     if (args.debug >= DebugVerbose) {
+        args.error_log << "Using libsensors v" << libsensors_version << std::endl;
+        #ifdef GPU_ENABLED
         int NVML_VERSION;
         char NVML_DRIVER_VERSION[NAME_BUFFER_SIZE];
         nvmlSystemGetCudaDriverVersion(&NVML_VERSION);
         nvmlSystemGetDriverVersion(NVML_DRIVER_VERSION, NAME_BUFFER_SIZE);
-        args.error_log << "Using libsensors v" << libsensors_version << std::endl <<
-                       "Using NVML v" << NVML_VERSION << std::endl <<
-                       "Using NVML Driver v" << NVML_DRIVER_VERSION << std::endl;
+        args.error_log << "Using NVML v" << NVML_VERSION << std::endl <<
+                          "Using NVML Driver v" << NVML_DRIVER_VERSION << std::endl;
+        #endif
     }
 
     // Hardware Detection / caching for faster updates
