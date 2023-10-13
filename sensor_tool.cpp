@@ -120,6 +120,7 @@ typedef struct argstruct {
     Output log, error_log = Output(false);
     double poll = 0.;
     std::chrono::duration<double> duration;
+    std::string wrapped;
 } arguments;
 // Arguments have global scope to permit reference during shutdown (debug values, file I/O, etc)
 arguments args;
@@ -226,20 +227,21 @@ void parse(int argc, char** argv) {
                 break;
         }
     }
-    if (optind < argc) {
-        std::cerr << "Unrecognized additional arguments!" << std::endl << "\t";
-        for (int i = optind; i < argc; i++) {
-            std::cerr << argv[i] << " ";
-        }
-        std::cerr << std::endl;
-        bad_args += 1;
-    }
-
     // Post-reading logic
     if (!args.cpu && !args.gpu) { // Default: Handle both CPU and GPU
         args.cpu = true;
         args.gpu = true;
     }
+    if (optind < argc) {
+        for (int i = optind; i < argc-1 ; i++) {
+            args.wrapped += std::string(argv[i]) + std::string(" ");
+        }
+        args.wrapped += std::string(argv[argc-1]);
+        if (args.debug >= DebugMinimal) {
+            std::cerr << "Treating additional arguments as a command to wrap:" << std::endl << args.wrapped << std::endl;
+        }
+    }
+
     if (bad_args > 0) {
         exit(EXIT_FAILURE);
     }
@@ -640,7 +642,7 @@ int main(int argc, char** argv) {
     // Prepare output
     print_header();
 
-    // TODO: Start timing
+    // Start timing
     std::chrono::time_point<std::chrono::system_clock> t0 = std::chrono::system_clock::now();
     if (args.debug >= DebugMinimal)
         args.error_log << "Initialization took " << std::chrono::duration_cast<std::chrono::nanoseconds>(t0-t_minus_one).count() / 1e9 << "s" << std::endl;
@@ -660,6 +662,7 @@ int main(int argc, char** argv) {
             args.error_log << "Updates completed in " << std::chrono::duration_cast<std::chrono::nanoseconds>(t2-t1).count() / 1e9 << "s" << std::endl;
         }
         // Sleeping between polls
+        // TODO: On first iteration, launch any wrapped process; exit the while loop when wrapped process ends
         if (args.poll == 0) break;
         else std::this_thread::sleep_for(args.duration);
     }
