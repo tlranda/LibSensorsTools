@@ -380,7 +380,7 @@ void update_cpus(void) {
         if (update) {
             switch (args.format) {
                 case 0:
-                    args.log << i->chip_name << ",";
+                    args.log << "," << i->chip_name;
                     break;
                 case 1:
                     args.log << "Chip " << i->chip_name;
@@ -402,7 +402,7 @@ void update_cpus(void) {
             if (args.debug >= DebugVerbose || update) {
                 switch (args.format) {
                     case 0:
-                        args.log << i->temperature[j] << ",";
+                        args.log << "," << i->temperature[j];
                         break;
                     case 1:
                         args.log << " temp NOW " << i->temperature[j] << std::endl;
@@ -425,7 +425,7 @@ void update_cpus(void) {
         if (args.debug >= DebugVerbose || update) {
             switch (args.format) {
                 case 0:
-                    args.log << i->hz << ",";
+                    args.log << "," << i->hz;
                     break;
                 case 1:
                     args.log << "Core " << i->coreid << " Frequency: " << i->hz << std::endl;
@@ -510,9 +510,9 @@ void update_gpus(void) {
         if (args.debug >= DebugVerbose || update) {
             switch (args.format) {
                 case 0:
-                    args.log << i->deviceName << "," << i->temperature << "," << i->powerUsage << "," <<
+                    args.log << "," << i->deviceName << "," << i->temperature << "," << i->powerUsage << "," <<
                              i->powerLimit << "," << i->utilization.gpu << "," << i->utilization.memory <<
-                             "," << i->memory.used << "," << i->memory.total << "," << i->pState << ",";
+                             "," << i->memory.used << "," << i->memory.total << "," << i->pState;
                     break;
                 case 1:
                     args.log << "GPU " << i->device_ID << " " << i->deviceName << " AFTER" << std::endl;
@@ -554,26 +554,27 @@ void print_header(void) {
         args.error_log << "Printing headers" << std::endl;
 
     // Set headers
+    args.log << "timestamp";
     if (args.cpu) {
         // Temperature
         for (std::vector<cpu_cache>::iterator i = known_cpus.begin(); i != known_cpus.end(); i++) {
-            args.log << "cpu_" << i->nr << "_name,";
+            args.log << ",cpu_" << i->nr << "_name";
             for (int j = 0; j < i->temperature.size(); j++) {
-                args.log << "cpu_" << i->nr << "_temperature_" << j << ",";
+                args.log << ",cpu_" << i->nr << "_temperature_" << j;
             }
         }
         // Frequency
         for (std::vector<freq_cache>::iterator i = known_freqs.begin(); i != known_freqs.end(); i++) {
-            args.log << "core_" << i->coreid << "_freq,";
+            args.log << ",core_" << i->coreid << "_freq";
         }
     }
     if (args.gpu) {
         for (std::vector<gpu_cache>::iterator i = known_gpus.begin(); i != known_gpus.end(); i++) {
-            args.log << "gpu_" << i->device_ID << "_name,gpu_" << i->device_ID << "_temperature,gpu_" <<
+            args.log << ",gpu_" << i->device_ID << "_name,gpu_" << i->device_ID << "_temperature,gpu_" <<
                      i->device_ID << "_power_usage,gpu_" << i->device_ID << "_power_limit,gpu_" <<
                      i->device_ID << "_utilization_gpu,gpu_" << i->device_ID <<
                      "_utilization_memory,gpu_" << i->device_ID << "_memory_used,gpu_" <<
-                     i->device_ID << "_memory_total,gpu_" << i->device_ID << "_pstate,";
+                     i->device_ID << "_memory_total,gpu_" << i->device_ID << "_pstate";
         }
     }
     args.log << std::endl;
@@ -650,9 +651,15 @@ int main(int argc, char** argv) {
     print_header();
 
     // TODO: Start timing
+    std::chrono::time_point<std::chrono::system_clock> t0 = std::chrono::system_clock::now();
 
     // Main Loop
     while (1) {
+        // Timestamp
+        std::chrono::time_point<std::chrono::system_clock> t1 = std::chrono::system_clock::now();
+        double elapse = std::chrono::duration_cast<std::chrono::nanoseconds>(t1-t0).count() / 1e9;
+        args.log << elapse;
+
         // Collection
         if (args.cpu) update_cpus();
         if (args.gpu) update_gpus();
