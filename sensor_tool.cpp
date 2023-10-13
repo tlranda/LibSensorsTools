@@ -377,16 +377,6 @@ void update_cpus(void) {
     if (args.debug >= DebugVerbose) args.error_log << "Update CPUs" << std::endl;
     // Temperature updates
     for (std::vector<cpu_cache>::iterator i = known_cpus.begin(); i != known_cpus.end(); i++) {
-        if (update) {
-            switch (args.format) {
-                case 0:
-                    args.log << "," << i->chip_name;
-                    break;
-                case 1:
-                    args.log << "Chip " << i->chip_name;
-                    break;
-            }
-        }
         for (int j = 0; j < i->temperature.size(); j++) {
             double prev = i->temperature[j];
             if (args.debug >= DebugVerbose) {
@@ -394,7 +384,7 @@ void update_cpus(void) {
                     case 0:
                         break;
                     case 1:
-                        args.log << " temp BEFORE " << prev << std::endl;
+                        args.log << "Chip " << i->chip_name << " temp BEFORE " << prev << std::endl;
                         break;
                 }
             }
@@ -558,9 +548,8 @@ void print_header(void) {
     if (args.cpu) {
         // Temperature
         for (std::vector<cpu_cache>::iterator i = known_cpus.begin(); i != known_cpus.end(); i++) {
-            args.log << ",cpu_" << i->nr << "_name";
             for (int j = 0; j < i->temperature.size(); j++) {
-                args.log << ",cpu_" << i->nr << "_temperature_" << j;
+                args.log << ",cpu_" << i->chip_name << "_temperature_" << j;
             }
         }
         // Frequency
@@ -594,6 +583,7 @@ void shutdown(int s = 0) {
 
 
 int main(int argc, char** argv) {
+    std::chrono::time_point<std::chrono::system_clock> t_minus_one = std::chrono::system_clock::now();
     // Library initializations
 	auto const error = sensors_init(NULL);
 	if(error != 0) {
@@ -652,18 +642,23 @@ int main(int argc, char** argv) {
 
     // TODO: Start timing
     std::chrono::time_point<std::chrono::system_clock> t0 = std::chrono::system_clock::now();
+    if (args.debug >= DebugMinimal)
+        args.error_log << "Initialization took " << std::chrono::duration_cast<std::chrono::nanoseconds>(t0-t_minus_one).count() / 1e9 << "s" << std::endl;
 
     // Main Loop
     while (1) {
         // Timestamp
         std::chrono::time_point<std::chrono::system_clock> t1 = std::chrono::system_clock::now();
-        double elapse = std::chrono::duration_cast<std::chrono::nanoseconds>(t1-t0).count() / 1e9;
-        args.log << elapse;
+        args.log << std::chrono::duration_cast<std::chrono::nanoseconds>(t1-t0).count() / 1e9;
 
         // Collection
         if (args.cpu) update_cpus();
         if (args.gpu) update_gpus();
         args.log << std::endl;
+        if (args.debug >= DebugMinimal) {
+            std::chrono::time_point<std::chrono::system_clock> t2 = std::chrono::system_clock::now();
+            args.error_log << "Updates completed in " << std::chrono::duration_cast<std::chrono::nanoseconds>(t2-t1).count() / 1e9 << "s" << std::endl;
+        }
         // Sleeping between polls
         if (args.poll == 0) break;
         else std::this_thread::sleep_for(args.duration);
