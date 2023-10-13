@@ -11,6 +11,7 @@
 #include <filesystem> // Manage I/O for writing to files rather than standard file descriptors
 #include <fstream> // for ofstreams
 #include <mutex> // Let's just be safe for once
+#include <string> // String manipulation
 #include <cstring> // strncopy, memset
 
 #ifdef GPU_ENABLED
@@ -20,8 +21,9 @@
 // safecuda includes <cuda.h>, <cuda_runtime.h>, <nvrtc.h>, <cublas_v2.h>, <stdlib.h>, <stdio.h>
 #include "safecuda.h" // Macros to do safe cuda calls
 #else
-#include <stdlib.h>
-#include <stdio.h>
+// Add standard libraries that would have been included by safecuda and don't require GPU support
+#include <cstdlib>
+#include <cstdio>
 #endif
 
 // LibSensors and NVML demos typically allocate this much space for chip/driver names
@@ -252,16 +254,22 @@ typedef struct cpu_cache_t {
     // Cached data
     std::vector<const sensors_feature*> features;
     std::vector<const sensors_subfeature*> subfeatures;
-    std::vector<double> last_read;
+    std::vector<double> temperature;
 } cpu_cache;
-
+// Combination of cached file pointer and last-read frequency value
+typedef struct cpu_freq_cache_t {
+    FILE * fhandle;
+    int coreid, hz;
+} freq_cache;
 std::vector<cpu_cache> known_cpus;
+std::vector<freq_cache> known_freqs;
 
 
 void cache_cpus(void) {
     // No caching if we aren't going to query the CPUs
     if (!args.cpu) return;
 
+    // Cache temperature values through lm-sensors
     int nr_name = 0, nr_feature;
     sensors_subfeature_type nr_subfeature = SENSORS_SUBFEATURE_TEMP_INPUT;
     double value;
@@ -277,8 +285,8 @@ void cache_cpus(void) {
         candidate.nr = nr_name;
         const sensors_chip_name* temp_name = sensors_get_detected_chips(nullptr, &nr_name);
 
-        // No more chips to read -- exit function
-        if (!temp_name) return;
+        // No more chips to read -- exit loop
+        if (!temp_name) break;
 
         // Clear and copy into candidate
         memset(candidate.chip_name, 0, NAME_BUFFER_SIZE);
@@ -307,14 +315,14 @@ void cache_cpus(void) {
                 if (args.debug >= DebugVerbose) {
                     args.error_log << "\t\t\tTemperature value read: " << value << std::endl;
                 }
-                candidate.last_read.push_back(value);
+                candidate.temperature.push_back(value);
             }
             temp_feature = sensors_get_features(temp_name, &nr_feature);
         }
         if (args.debug >= DebugVerbose) {
             args.error_log << "Finished inspecting chip " << candidate.chip_name;
         }
-        if (!candidate.last_read.empty()) {
+        if (!candidate.temperature.empty()) {
             known_cpus.push_back(candidate);
             if (args.debug >= DebugVerbose) {
                 args.error_log << " , added to known CPUs" << std::endl;
@@ -324,11 +332,50 @@ void cache_cpus(void) {
             args.error_log << " , but discarded due to empty temperature reads" << std::endl;
         }
     }
+
+    // Cache CPU frequencies via file pointers
+    const std::string prefix = "/sys/devices/system/cpu/cpu",
+                      suffix = "/cpufreq/scaling_cur_freq";
+    int n_cpu = 0;
+    char buf[NAME_BUFFER_SIZE];
+    // Collect until we cannot find a CPU core id to match
+    while (1) {
+        std::filesystem::path fpath(prefix + std::to_string(n_cpu) + suffix);
+        if (std::filesystem::exists(fpath)) {
+            freq_cache candidate;
+            candidate.coreid = n_cpu;
+            candidate.fhandle = fopen(fpath.c_str(), "r");
+            if (candidate.fhandle) {
+                // Initial read
+                int nbytes = fread(buf, sizeof(char), NAME_BUFFER_SIZE, candidate.fhandle);
+                if (nbytes > 0) {
+                    candidate.hz = std::stoi(buf);
+                    rewind(candidate.fhandle);
+                    known_freqs.push_back(candidate);
+                    if (args.debug >= DebugVerbose)
+                        args.error_log << "Found CPU freq for core " << n_cpu << std::endl;
+                }
+                else if (args.debug >= DebugMinimal) {
+                    args.error_log << "Unable to read CPU freq for core " << n_cpu << ", so it is not cached" << std::endl;
+                }
+            }
+            else if (args.debug >= DebugMinimal) {
+                args.error_log << "Unable to open CPU freq for core " << n_cpu << ", but its file should exist!" << std::endl;
+            }
+        }
+        else {
+            if (args.debug >= DebugVerbose)
+                args.error_log << "Could not locate file '" << fpath << "', terminating core frequency search" << std::endl;
+            break;
+        }
+        n_cpu++;
+    }
 }
 
 
 void update_cpus(void) {
     if (args.debug >= DebugVerbose) args.error_log << "Update CPUs" << std::endl;
+    // Temperature updates
     for (std::vector<cpu_cache>::iterator i = known_cpus.begin(); i != known_cpus.end(); i++) {
         if (update) {
             switch (args.format) {
@@ -340,8 +387,8 @@ void update_cpus(void) {
                     break;
             }
         }
-        for (int j = 0; j < i->last_read.size(); j++) {
-            double prev = i->last_read[j];
+        for (int j = 0; j < i->temperature.size(); j++) {
+            double prev = i->temperature[j];
             if (args.debug >= DebugVerbose) {
                 switch (args.format) {
                     case 0:
@@ -351,16 +398,38 @@ void update_cpus(void) {
                         break;
                 }
             }
-            sensors_get_value(i->name, i->subfeatures[j]->number, &i->last_read[j]);
+            sensors_get_value(i->name, i->subfeatures[j]->number, &i->temperature[j]);
             if (args.debug >= DebugVerbose || update) {
                 switch (args.format) {
                     case 0:
-                        args.log << i->last_read[j] << ",";
+                        args.log << i->temperature[j] << ",";
                         break;
                     case 1:
-                        args.log << " temp NOW " << i->last_read[j] << std::endl;
+                        args.log << " temp NOW " << i->temperature[j] << std::endl;
                         break;
                 }
+            }
+        }
+    }
+    // Frequency updates
+    char buf[NAME_BUFFER_SIZE];
+    for (std::vector<freq_cache>::iterator i = known_freqs.begin(); i != known_freqs.end(); i++) {
+        rewind(i->fhandle);
+        int nbytes = fread(buf, sizeof(char), NAME_BUFFER_SIZE, i->fhandle);
+        if (nbytes <= 0 && args.debug >= DebugMinimal) {
+            args.error_log << "Unable to update frequency for CPU " << i->coreid << std::endl;
+        }
+        else {
+            i->hz = std::stoi(buf);
+        }
+        if (args.debug >= DebugVerbose || update) {
+            switch (args.format) {
+                case 0:
+                    args.log << i->hz << ",";
+                    break;
+                case 1:
+                    args.log << "Core " << i->coreid << " Frequency: " << i->hz << std::endl;
+                    break;
             }
         }
     }
@@ -486,11 +555,16 @@ void print_header(void) {
 
     // Set headers
     if (args.cpu) {
+        // Temperature
         for (std::vector<cpu_cache>::iterator i = known_cpus.begin(); i != known_cpus.end(); i++) {
             args.log << "cpu_" << i->nr << "_name,";
-            for (int j = 0; j < i->last_read.size(); j++) {
+            for (int j = 0; j < i->temperature.size(); j++) {
                 args.log << "cpu_" << i->nr << "_temperature_" << j << ",";
             }
+        }
+        // Frequency
+        for (std::vector<freq_cache>::iterator i = known_freqs.begin(); i != known_freqs.end(); i++) {
+            args.log << "core_" << i->coreid << "_freq,";
         }
     }
     if (args.gpu) {
@@ -574,6 +648,8 @@ int main(int argc, char** argv) {
 
     // Prepare output
     print_header();
+
+    // TODO: Start timing
 
     // Main Loop
     while (1) {
