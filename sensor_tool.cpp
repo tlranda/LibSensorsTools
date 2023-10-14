@@ -13,6 +13,9 @@
 #include <mutex> // Let's just be safe for once
 #include <string> // String manipulation
 #include <cstring> // strncopy, memset
+// fork() and pid_t's
+#include <sys/types.h>
+#include <sys/wait.h>
 
 #ifdef GPU_ENABLED
 #include <cuda.h> // Must compile with -lcuda
@@ -118,9 +121,9 @@ typedef struct argstruct {
     short format = 0, debug = 0;
     std::filesystem::path log_path, error_log_path;
     Output log, error_log = Output(false);
-    double poll = 0.;
-    std::chrono::duration<double> duration;
-    std::string wrapped;
+    double poll = 0., initial_wait = 0., post_wait = 0.;
+    std::chrono::duration<double> poll_duration, initial_duration, post_duration;
+    char** wrapped;
 } arguments;
 // Arguments have global scope to permit reference during shutdown (debug values, file I/O, etc)
 arguments args;
@@ -129,7 +132,8 @@ arguments args;
 bool update = false;
 
 
-/* Read command line and parse arguments
+/*
+   Read command line and parse arguments
    Pointer args used to store semantic settings for program execution
  */
 void parse(int argc, char** argv) {
@@ -145,10 +149,12 @@ void parse(int argc, char** argv) {
         {"log", required_argument, 0, 'l'},
         {"errorlog", required_argument, 0, 'L'},
         {"poll", required_argument, 0, 'p'},
+        {"initial-wait", required_argument, 0, 'i'},
+        {"post-wait", required_argument, 0, 'w'},
         {"debug", required_argument, 0, 'd'},
         {0,0,0,0}
     };
-    const char* optionstr = "hcgfl:L:p:d:";
+    const char* optionstr = "hcgfl:L:p:i:w:d:";
     // Disable getopt's automatic error message -- we'll catch it via the '?' return and shut down
     opterr = 0;
 
@@ -180,6 +186,11 @@ void parse(int argc, char** argv) {
                              "File to write extra debug/errors to" << std::endl;
                 std::cout << "\t-p [interval] | --poll [interval]\n\t\t" <<
                              "Floating point interval in seconds to poll stats (interval > 0)" << std::endl;
+                std::cout << "\t-i [interval] | --initial-wait [interval]\n\t\t" <<
+                             "Floating point interval in seconds to wait between collection initalization and starting subcommands (interval > 0)" << std::endl;
+                std::cout << "\t-w [interval] | --post-wait [interval]\n\t\t" <<
+                             "Floating point interval in seconds to wait after subcommand completion" << std::endl <<
+                             "A negative interval indicates to wait up to that many seconds or when temperatures return to initial levels" << std::endl;
                 std::cout << "\t-d [level] | --debug [level]\n\t\t" <<
                              "Debug verbosity (default: 0, maximum: 1)" << std::endl;
                 exit(EXIT_SUCCESS);
@@ -202,15 +213,31 @@ void parse(int argc, char** argv) {
                 break;
             case 'p':
                 args.poll = atof(optarg);
-                if (args.poll < 0) {
+                if (args.poll <= 0) {
                     std::cerr << "Invalid setting for " << argv[optind-2] << ": " << optarg <<
                                  "\n\tPolling duration must be greater than 0" << std::endl;
                     bad_args += 1;
                 }
                 else {
                     // Set sleep time for nanosleep
-                    args.duration = static_cast<std::chrono::duration<double>>(args.poll);
+                    args.poll_duration = static_cast<std::chrono::duration<double>>(args.poll);
                 }
+                break;
+            case 'i':
+                args.initial_wait = atof(optarg);
+                if (args.initial_wait <= 0) {
+                    std::cerr << "Invalid setting for " << argv[optind-2] << ": " << optarg <<
+                                "\n\tInitial wait duration must be greater than 0" << std::endl;
+                    bad_args += 1;
+                }
+                else {
+                    args.initial_duration = static_cast<std::chrono::duration<double>>(args.initial_wait);
+                }
+                break;
+            case 'w':
+                args.post_wait = atof(optarg);
+                // Post wait can be less than zero to indicate a negative timeout
+                args.post_duration = static_cast<std::chrono::duration<double>>(args.post_wait);
                 break;
             case 'd':
                 args.debug = atoi(optarg);
@@ -233,14 +260,19 @@ void parse(int argc, char** argv) {
         args.gpu = true;
     }
     if (optind < argc) {
-        for (int i = optind; i < argc-1 ; i++) {
-            args.wrapped += std::string(argv[i]) + std::string(" ");
-        }
-        args.wrapped += std::string(argv[argc-1]);
+        args.wrapped = const_cast<char**>(&argv[optind]);
         if (args.debug >= DebugMinimal) {
-            std::cerr << "Treating additional arguments as a command to wrap:" << std::endl << args.wrapped << std::endl;
+            std::cerr << "Treating additional arguments as a command to wrap:" << std::endl;
+            for (int i = 0; i < argc-optind; i++)
+                std::cerr << args.wrapped[i] << " ";
+            std::cerr << std::endl;
+        }
+        if (args.poll == 0) {
+            std::cerr << "Polling duration must be > 0 when wrapping a command" << std::endl;
+            bad_args += 1;
         }
     }
+    else args.wrapped = nullptr;
 
     if (bad_args > 0) {
         exit(EXIT_FAILURE);
@@ -572,6 +604,27 @@ void print_header(void) {
 }
 
 
+// Return code of 1 is used when there is no wrapped process to indicate that polling is complete
+int poll_cycle(std::chrono::time_point<std::chrono::system_clock> t0) {
+    // Timestamp
+    std::chrono::time_point<std::chrono::system_clock> t1 = std::chrono::system_clock::now();
+    args.log << std::chrono::duration_cast<std::chrono::nanoseconds>(t1-t0).count() / 1e9;
+
+    // Collection
+    if (args.cpu) update_cpus();
+    if (args.gpu) update_gpus();
+    args.log << std::endl;
+    if (args.debug >= DebugMinimal) {
+        std::chrono::time_point<std::chrono::system_clock> t2 = std::chrono::system_clock::now();
+        args.error_log << "Updates completed in " << std::chrono::duration_cast<std::chrono::nanoseconds>(t2-t1).count() / 1e9 << "s" << std::endl;
+    }
+    // Sleeping between polls
+    if (args.poll == 0) return 1;
+    else std::this_thread::sleep_for(args.poll_duration);
+    return 0;
+}
+
+
 // Cleanup calls should be based on globally available information; process-killing interrupts will go through this function
 void shutdown(int s = 0) {
     if (args.debug >= DebugMinimal) args.error_log << "Run shutdown with signal " << s << std::endl;
@@ -616,10 +669,26 @@ int main(int argc, char** argv) {
         "Help: " << args.help << std::endl <<
         "CPU: " << args.cpu << std::endl <<
         "GPU: " << args.gpu << std::endl <<
-        "Log: " << args.log << std::endl <<
+        "Format: ";
+        switch(args.format) {
+            case 0:
+                args.error_log << "csv";
+                break;
+            case 1:
+                args.error_log << "human-readable";
+                break;
+        }
+        args.error_log << std::endl << "Log: " << args.log << std::endl <<
         "Error log: " << args.error_log << std::endl <<
         "Poll: " << args.poll << std::endl <<
-        "Debug: " << args.debug << std::endl;
+        "Initial Wait: " << args.initial_wait << std::endl <<
+        "Post Wait: " << args.post_wait << std::endl <<
+        "Debug: " << args.debug << std::endl <<
+        "Wrapped call: ";
+        int argidx = 0;
+        while(args.wrapped[argidx] != nullptr)
+            args.error_log << args.wrapped[argidx++] << " ";
+        args.error_log << std::endl;
     }
 
     // Denote library versions
@@ -648,23 +717,90 @@ int main(int argc, char** argv) {
         args.error_log << "Initialization took " << std::chrono::duration_cast<std::chrono::nanoseconds>(t0-t_minus_one).count() / 1e9 << "s" << std::endl;
 
     // Main Loop
-    while (1) {
-        // Timestamp
-        std::chrono::time_point<std::chrono::system_clock> t1 = std::chrono::system_clock::now();
-        args.log << std::chrono::duration_cast<std::chrono::nanoseconds>(t1-t0).count() / 1e9;
-
-        // Collection
-        if (args.cpu) update_cpus();
-        if (args.gpu) update_gpus();
-        args.log << std::endl;
-        if (args.debug >= DebugMinimal) {
-            std::chrono::time_point<std::chrono::system_clock> t2 = std::chrono::system_clock::now();
-            args.error_log << "Updates completed in " << std::chrono::duration_cast<std::chrono::nanoseconds>(t2-t1).count() / 1e9 << "s" << std::endl;
+    int poll_result;
+    if (args.wrapped == nullptr) {
+        while (poll_result == 0) {
+            poll_result = poll_cycle(t0);
         }
-        // Sleeping between polls
-        // TODO: On first iteration, launch any wrapped process; exit the while loop when wrapped process ends
-        if (args.poll == 0) break;
-        else std::this_thread::sleep_for(args.duration);
+    }
+    else { // There's a call to fork
+        // Initial Wait
+        if (args.debug >= DebugVerbose)
+            args.error_log << "Begin initial wait. Should last " << args.initial_wait << " seconds" << std::endl;
+        std::chrono::time_point<std::chrono::system_clock> t1 = std::chrono::system_clock::now();
+        double waiting = std::chrono::duration_cast<std::chrono::nanoseconds>(t1-t0).count() / 1e9;
+        while (waiting < args.initial_wait) {
+            poll_cycle(t0);
+            t1 = std::chrono::system_clock::now();
+            waiting = std::chrono::duration_cast<std::chrono::nanoseconds>(t1-t0).count() / 1e9;
+        }
+        // Fork call
+        pid_t pid = fork();
+        if (pid == -1) {
+            args.error_log << "Fork failed." << std::endl;
+            exit(EXIT_FAILURE);
+        }
+        else if (pid == 0) {
+            // Child process should execute the indicated command
+            if (execvp(args.wrapped[0], args.wrapped) == -1) {
+                args.error_log << "Exec child process failed" << std::endl;
+                exit(EXIT_FAILURE);
+            }
+        }
+        else {
+            // Parent process will continue to poll devices and wait for child
+            int status;
+            pid_t result;
+
+            // Non-blocking wait using waitpid with WNOHANG
+            do {
+                // Briefly check in on child process, then go back to collecting results
+                result = waitpid(pid, &status, WNOHANG);
+                poll_cycle(t0);
+            }
+            while (result == 0);
+
+            // Waiting is over
+            if (result == -1) {
+                args.error_log << "Wait on child process failed" << std::endl;
+                exit(EXIT_FAILURE);
+            }
+            if (WIFEXITED(status)) {
+                int exit_status = WEXITSTATUS(status);
+                args.error_log << "Child process exits with status " << exit_status << std::endl;
+            }
+            else if (WIFSIGNALED(status)) {
+                int signal_number = WTERMSIG(status);
+                args.error_log << "Child process caught/terminated by signal " << signal_number << std::endl;
+            }
+
+            // Post Wait
+            if (args.debug >= DebugVerbose)
+                args.error_log << "Begin post wait. Should last " << args.post_wait << " seconds" << std::endl;
+            std::chrono::time_point<std::chrono::system_clock> t2 = std::chrono::system_clock::now();
+            t1 = std::chrono::system_clock::now();
+            waiting = std::chrono::duration_cast<std::chrono::nanoseconds>(t1-t2).count() / 1e9;
+            if (args.post_wait < 0) {
+                // Maximal wait enforced here
+                while (waiting < -args.post_wait) {
+                    // Check for initial temperature match
+                    if (false) {
+                        break;
+                    }
+                    poll_cycle(t0);
+                    t1 = std::chrono::system_clock::now();
+                    waiting = std::chrono::duration_cast<std::chrono::nanoseconds>(t1-t2).count() / 1e9;
+                }
+            }
+            else {
+                // Normal wait for a simple duration to expire
+                while (waiting < args.post_wait) {
+                    poll_cycle(t0);
+                    t1 = std::chrono::system_clock::now();
+                    waiting = std::chrono::duration_cast<std::chrono::nanoseconds>(t1-t2).count() / 1e9;
+                }
+            }
+        }
     }
 
     if (args.debug >= DebugVerbose) {
