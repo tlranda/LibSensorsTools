@@ -480,8 +480,10 @@ typedef struct gpu_cache_t {
     char deviceName[NAME_BUFFER_SIZE] = {0};
     #ifdef GPU_ENABLED
     nvmlDevice_t device_Handle;
+    nvmlFieldValue_t temperature_field;
     // Cached data
-    uint temperature, initialTemperature, powerUsage, powerLimit; // { degrees Celsius, degrees Celsius, Watts, Watts }
+    uint gpu_temperature, gpu_initialTemperature, mem_temperature, mem_initialTemperature, // { all degrees Celsius }
+         powerUsage, powerLimit; // { both Watts }
     nvmlUtilization_t utilization; // { ui .gpu (%), .memory (%); }
     nvmlMemory_t memory; // { ull .free (bytes), .total (bytes), .used (bytes) }
     nvmlPstates_t pState; // { ui[0-12], 12 is lowest idle, 0 is highest intensity }
@@ -507,11 +509,14 @@ void cache_gpus(void) {
         gpu_cache candidate;
         candidate.device_ID = i;
         nvmlDeviceGetHandleByIndex_v2(static_cast<unsigned int>(i), &candidate.device_Handle);
+        candidate.temperature_field.fieldId = NVML_FI_DEV_MEMORY_TEMP; // Memory temperature
 
         // Initial value caching
         nvmlDeviceGetName(candidate.device_Handle, candidate.deviceName, NAME_BUFFER_SIZE);
-        nvmlDeviceGetTemperature(candidate.device_Handle, NVML_TEMPERATURE_GPU, &candidate.temperature);
-        candidate.initialTemperature = candidate.temperature;
+        nvmlDeviceGetTemperature(candidate.device_Handle, NVML_TEMPERATURE_GPU, &candidate.gpu_temperature);
+        candidate.gpu_initialTemperature = candidate.gpu_temperature;
+        nvmlDeviceGetFieldValues(candidate.device_Handle, 1, &candidate.temperature_field);
+        candidate.mem_initialTemperature = candidate.mem_temperature = candidate.temperature_field.value.uiVal;
         nvmlDeviceGetPowerUsage(candidate.device_Handle, &candidate.powerUsage);
         nvmlDeviceGetEnforcedPowerLimit(candidate.device_Handle, &candidate.powerLimit);
         nvmlDeviceGetUtilizationRates(candidate.device_Handle, &candidate.utilization);
@@ -522,7 +527,7 @@ void cache_gpus(void) {
             args.error_log << "Finished caching GPU " << i << std::endl;
         }
         known_gpus.push_back(candidate);
-        gpus_to_satisfy++;
+        gpus_to_satisfy += 2;
     }
     if (args.debug >= DebugMinimal) {
         args.error_log << "Tracking " << gpus_to_satisfy << " GPU temperature sensors" << std::endl;
@@ -539,15 +544,19 @@ int update_gpus(void) {
                     break;
                 case 1:
                     args.log << "GPU " << i->device_ID << " " << i->deviceName << " BEFORE" << std::endl;
-                    args.log << "\tTemperature: " << i->temperature << std::endl;
+                    args.log << "\tGPU Temperature: " << i->gpu_temperature << std::endl;
+                    args.log << "\tMemory Temperature: " << i->mem_temperature << std::endl;
                     args.log << "\tPower Usage/Limit: " << i->powerUsage << " / " << i->powerLimit << std::endl;
                     args.log << "\tUtilization: " << i->utilization.gpu << "\% GPU " << i->utilization.memory << "\% Memory " << std::endl;
                     args.log << "\tPerformance State: " << i->pState << std::endl;
                     break;
             }
         }
-        nvmlDeviceGetTemperature(i->device_Handle, NVML_TEMPERATURE_GPU, &i->temperature);
-        if (i->temperature <= i->initialTemperature) at_below_initial_temperature++;
+        nvmlDeviceGetTemperature(i->device_Handle, NVML_TEMPERATURE_GPU, &i->gpu_temperature);
+        if (i->gpu_temperature <= i->gpu_initialTemperature) at_below_initial_temperature++;
+        nvmlDeviceGetFieldValues(i->device_Handle, 1, &i->temperature_field);
+        i->mem_temperature = i->temperature_field.value.uiVal;
+        if (i->mem_temperature <= i->mem_initialTemperature) at_below_initial_temperature++;
         nvmlDeviceGetPowerUsage(i->device_Handle, &i->powerUsage);
         nvmlDeviceGetEnforcedPowerLimit(i->device_Handle, &i->powerLimit);
         nvmlDeviceGetUtilizationRates(i->device_Handle, &i->utilization);
@@ -556,13 +565,14 @@ int update_gpus(void) {
         if (args.debug >= DebugVerbose || update) {
             switch (args.format) {
                 case 0:
-                    args.log << "," << i->deviceName << "," << i->temperature << "," << i->powerUsage << "," <<
-                             i->powerLimit << "," << i->utilization.gpu << "," << i->utilization.memory <<
-                             "," << i->memory.used << "," << i->memory.total << "," << i->pState;
+                    args.log << "," << i->deviceName << "," << i->gpu_temperature << "," << i->mem_temperature << "," <<
+                             i->powerUsage << "," << i->powerLimit << "," << i->utilization.gpu << "," <<
+                             i->utilization.memory << "," << i->memory.used << "," << i->memory.total << "," << i->pState;
                     break;
                 case 1:
                     args.log << "GPU " << i->device_ID << " " << i->deviceName << " AFTER" << std::endl;
-                    args.log << "\tTemperature: " << i->temperature << std::endl;
+                    args.log << "\tGPU Temperature: " << i->gpu_temperature << std::endl;
+                    args.log << "\tMemory Temperature: " << i->mem_temperature << std::endl;
                     args.log << "\tPower Usage/Limit: " << i->powerUsage << " / " << i->powerLimit << std::endl;
                     args.log << "\tUtilization: " << i->utilization.gpu << "\% GPU " << i->utilization.memory << "\% Memory " << std::endl;
                     args.log << "\tPerformance State: " << i->pState << std::endl;
@@ -595,7 +605,7 @@ void set_initial_temperatures(void) {
     }
     if (args.gpu) {
         for (std::vector<gpu_cache>::iterator i = known_gpus.begin(); i != known_gpus.end(); i++) {
-            i->initialTemperature = i->temperature;
+            i->gpu_initialTemperature = i->gpu_temperature;
         }
     }
 }
@@ -633,10 +643,10 @@ void print_header(void) {
     }
     if (args.gpu) {
         for (std::vector<gpu_cache>::iterator i = known_gpus.begin(); i != known_gpus.end(); i++) {
-            args.log << ",gpu_" << i->device_ID << "_name,gpu_" << i->device_ID << "_temperature,gpu_" <<
-                     i->device_ID << "_power_usage,gpu_" << i->device_ID << "_power_limit,gpu_" <<
-                     i->device_ID << "_utilization_gpu,gpu_" << i->device_ID <<
-                     "_utilization_memory,gpu_" << i->device_ID << "_memory_used,gpu_" <<
+            args.log << ",gpu_" << i->device_ID << "_name,gpu_" << i->device_ID << "_gpu_temperature,gpu_" <<
+                     i->device_ID << "_mem_temperature,gpu_" << i->device_ID << "_power_usage,gpu_" <<
+                     i->device_ID << "_power_limit,gpu_" << i->device_ID << "_utilization_gpu,gpu_" <<
+                     i->device_ID << "_utilization_memory,gpu_" << i->device_ID << "_memory_used,gpu_" <<
                      i->device_ID << "_memory_total,gpu_" << i->device_ID << "_pstate";
         }
     }
