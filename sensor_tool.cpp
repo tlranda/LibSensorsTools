@@ -131,6 +131,8 @@ arguments args;
 // Flag that permits update logging upon collection (prevents first row from being logged prior to CSV headers)
 bool update = false;
 
+// Set to program start time
+std::chrono::time_point<std::chrono::system_clock> t_minus_one;
 
 /*
    Read command line and parse arguments
@@ -193,6 +195,8 @@ void parse(int argc, char** argv) {
                              "A negative interval indicates to wait up to that many seconds or when temperatures return to initial levels" << std::endl;
                 std::cout << "\t-d [level] | --debug [level]\n\t\t" <<
                              "Debug verbosity (default: 0, maximum: 1)" << std::endl;
+                std::cout << std::endl << "To automatically wrap another command with sensing for its duration, specify that command after the '--' argument" <<
+                          std::endl << "ie: " << PROGNAME << " -- sleep 3" << std::endl;
                 exit(EXIT_SUCCESS);
             case 'c':
                 args.cpu = true;
@@ -289,6 +293,7 @@ typedef struct cpu_cache_t {
     std::vector<const sensors_feature*> features;
     std::vector<const sensors_subfeature*> subfeatures;
     std::vector<double> temperature;
+    std::vector<double> initial_temperature;
 } cpu_cache;
 // Combination of cached file pointer and last-read frequency value
 typedef struct cpu_freq_cache_t {
@@ -296,6 +301,7 @@ typedef struct cpu_freq_cache_t {
     int coreid, hz;
 } freq_cache;
 std::vector<cpu_cache> known_cpus;
+int cpus_to_satisfy = 0;
 std::vector<freq_cache> known_freqs;
 
 
@@ -350,6 +356,8 @@ void cache_cpus(void) {
                     args.error_log << "\t\t\tTemperature value read: " << value << std::endl;
                 }
                 candidate.temperature.push_back(value);
+                candidate.initial_temperature.push_back(value);
+                cpus_to_satisfy++;
             }
             temp_feature = sensors_get_features(temp_name, &nr_feature);
         }
@@ -404,12 +412,16 @@ void cache_cpus(void) {
         }
         n_cpu++;
     }
+    if (args.debug >= DebugMinimal) {
+        args.error_log << "Tracking " << cpus_to_satisfy << " CPU temperature sensors" << std::endl;
+    }
 }
 
 
-void update_cpus(void) {
+int update_cpus(void) {
     if (args.debug >= DebugVerbose) args.error_log << "Update CPUs" << std::endl;
     // Temperature updates
+    int at_below_initial_temperature = 0;
     for (std::vector<cpu_cache>::iterator i = known_cpus.begin(); i != known_cpus.end(); i++) {
         for (int j = 0; j < i->temperature.size(); j++) {
             double prev = i->temperature[j];
@@ -423,6 +435,7 @@ void update_cpus(void) {
                 }
             }
             sensors_get_value(i->name, i->subfeatures[j]->number, &i->temperature[j]);
+            if (i->temperature[j] <= i->initial_temperature[j]) at_below_initial_temperature++;
             if (args.debug >= DebugVerbose || update) {
                 switch (args.format) {
                     case 0:
@@ -457,6 +470,7 @@ void update_cpus(void) {
             }
         }
     }
+    return at_below_initial_temperature;
 }
 
 
@@ -467,7 +481,7 @@ typedef struct gpu_cache_t {
     #ifdef GPU_ENABLED
     nvmlDevice_t device_Handle;
     // Cached data
-    uint temperature, powerUsage, powerLimit; // { degrees Celsius, Watts, Watts }
+    uint temperature, initialTemperature, powerUsage, powerLimit; // { degrees Celsius, degrees Celsius, Watts, Watts }
     nvmlUtilization_t utilization; // { ui .gpu (%), .memory (%); }
     nvmlMemory_t memory; // { ull .free (bytes), .total (bytes), .used (bytes) }
     nvmlPstates_t pState; // { ui[0-12], 12 is lowest idle, 0 is highest intensity }
@@ -475,6 +489,7 @@ typedef struct gpu_cache_t {
 } gpu_cache;
 
 std::vector<gpu_cache> known_gpus;
+int gpus_to_satisfy = 0;
 
 #ifdef GPU_ENABLED
 void cache_gpus(void) {
@@ -496,6 +511,7 @@ void cache_gpus(void) {
         // Initial value caching
         nvmlDeviceGetName(candidate.device_Handle, candidate.deviceName, NAME_BUFFER_SIZE);
         nvmlDeviceGetTemperature(candidate.device_Handle, NVML_TEMPERATURE_GPU, &candidate.temperature);
+        candidate.initialTemperature = candidate.temperature;
         nvmlDeviceGetPowerUsage(candidate.device_Handle, &candidate.powerUsage);
         nvmlDeviceGetEnforcedPowerLimit(candidate.device_Handle, &candidate.powerLimit);
         nvmlDeviceGetUtilizationRates(candidate.device_Handle, &candidate.utilization);
@@ -506,11 +522,16 @@ void cache_gpus(void) {
             args.error_log << "Finished caching GPU " << i << std::endl;
         }
         known_gpus.push_back(candidate);
+        gpus_to_satisfy++;
+    }
+    if (args.debug >= DebugMinimal) {
+        args.error_log << "Tracking " << gpus_to_satisfy << " GPU temperature sensors" << std::endl;
     }
 }
 
-void update_gpus(void) {
+int update_gpus(void) {
     if (args.debug >= DebugVerbose) args.error_log << "Update GPUs" << std::endl;
+    int at_below_initial_temperature = 0;
     for (std::vector<gpu_cache>::iterator i = known_gpus.begin(); i != known_gpus.end(); i++) {
         if (args.debug >= DebugVerbose) {
             switch (args.format) {
@@ -526,6 +547,7 @@ void update_gpus(void) {
             }
         }
         nvmlDeviceGetTemperature(i->device_Handle, NVML_TEMPERATURE_GPU, &i->temperature);
+        if (i->temperature <= i->initialTemperature) at_below_initial_temperature++;
         nvmlDeviceGetPowerUsage(i->device_Handle, &i->powerUsage);
         nvmlDeviceGetEnforcedPowerLimit(i->device_Handle, &i->powerLimit);
         nvmlDeviceGetUtilizationRates(i->device_Handle, &i->utilization);
@@ -548,17 +570,35 @@ void update_gpus(void) {
             }
         }
     }
+    return at_below_initial_temperature;
 }
 #else
 void cache_gpus(void) {
     if (args.debug >= DebugMinimal)
         args.error_log << "Not compiled with GPU_ENABLED definition -- no GPU support" << std::endl;
 }
-void update_gpus(void) {
+int update_gpus(void) {
     if (args.debug >= DebugVerbose)
         args.error_log << "No GPU updates -- Not compiled with GPU_ENABLED definition" << std::endl;
+    return 0;
 }
 #endif
+
+// Changes initial temperature threshold values to most recently updated value (does not create an update itself)
+void set_initial_temperatures(void) {
+    if (args.cpu) {
+        for (std::vector<cpu_cache>::iterator i = known_cpus.begin(); i != known_cpus.end(); i++) {
+            for (int j = 0; j < i->temperature.size(); j++) {
+                i->initial_temperature[j] = i->temperature[j];
+            }
+        }
+    }
+    if (args.gpu) {
+        for (std::vector<gpu_cache>::iterator i = known_gpus.begin(); i != known_gpus.end(); i++) {
+            i->initialTemperature = i->temperature;
+        }
+    }
+}
 
 // Prints the CSV header columns and immediate cached values from first read
 void print_header(void) {
@@ -604,29 +644,41 @@ void print_header(void) {
 }
 
 
-// Return code of 1 is used when there is no wrapped process to indicate that polling is complete
+// Returns the number of sensors that are at or below their initial value reading
 int poll_cycle(std::chrono::time_point<std::chrono::system_clock> t0) {
+    int at_or_below_initial_temperature = 0;
     // Timestamp
     std::chrono::time_point<std::chrono::system_clock> t1 = std::chrono::system_clock::now();
     args.log << std::chrono::duration_cast<std::chrono::nanoseconds>(t1-t0).count() / 1e9;
 
     // Collection
-    if (args.cpu) update_cpus();
-    if (args.gpu) update_gpus();
+    if (args.cpu) {
+        int update = update_cpus();
+        if (args.debug >= DebugVerbose) args.error_log << "CPUs have " << update << " / " << cpus_to_satisfy << " satisfied temperatures" << std::endl;
+        at_or_below_initial_temperature += update;
+        //at_or_below_initial_temperature += update_cpus();
+    }
+    if (args.gpu) {
+        int update = update_gpus();
+        if (args.debug >= DebugVerbose) args.error_log << "GPUs have " << update << " / " << gpus_to_satisfy << " satisfied temperatures" << std::endl;
+        at_or_below_initial_temperature += update;
+        //at_or_below_initial_temperature += update_gpus();
+    }
     args.log << std::endl;
     if (args.debug >= DebugMinimal) {
         std::chrono::time_point<std::chrono::system_clock> t2 = std::chrono::system_clock::now();
         args.error_log << "Updates completed in " << std::chrono::duration_cast<std::chrono::nanoseconds>(t2-t1).count() / 1e9 << "s" << std::endl;
     }
     // Sleeping between polls
-    if (args.poll == 0) return 1;
-    else std::this_thread::sleep_for(args.poll_duration);
-    return 0;
+    if (args.poll != 0) std::this_thread::sleep_for(args.poll_duration);
+    return at_or_below_initial_temperature;
 }
 
 
 // Cleanup calls should be based on globally available information; process-killing interrupts will go through this function
 void shutdown(int s = 0) {
+    std::chrono::time_point<std::chrono::system_clock> t0 = std::chrono::system_clock::now();
+    args.error_log << "@@Shutdown at " << std::chrono::duration_cast<std::chrono::nanoseconds>(t0-t_minus_one).count() / 1e9 << "s" << std::endl;
     if (args.debug >= DebugMinimal) args.error_log << "Run shutdown with signal " << s << std::endl;
     #ifdef GPU_ENABLED
     nvmlShutdown();
@@ -638,7 +690,7 @@ void shutdown(int s = 0) {
 
 
 int main(int argc, char** argv) {
-    std::chrono::time_point<std::chrono::system_clock> t_minus_one = std::chrono::system_clock::now();
+    t_minus_one = std::chrono::system_clock::now();
     // Library initializations
 	auto const error = sensors_init(NULL);
 	if(error != 0) {
@@ -713,14 +765,20 @@ int main(int argc, char** argv) {
 
     // Start timing
     std::chrono::time_point<std::chrono::system_clock> t0 = std::chrono::system_clock::now();
-    if (args.debug >= DebugMinimal)
-        args.error_log << "Initialization took " << std::chrono::duration_cast<std::chrono::nanoseconds>(t0-t_minus_one).count() / 1e9 << "s" << std::endl;
+    args.error_log << "@@Initialized at " << std::chrono::duration_cast<std::chrono::nanoseconds>(t0-t_minus_one).count() / 1e9 << "s" << std::endl;
 
     // Main Loop
-    int poll_result;
+    int poll_result, n_to_satisfy = cpus_to_satisfy + gpus_to_satisfy;
     if (args.wrapped == nullptr) {
-        while (poll_result == 0) {
-            poll_result = poll_cycle(t0);
+        if (poll_result == 0) {
+            // Single event collection
+            poll_cycle(t0);
+        }
+        else {
+            // No wrapping, monitor until the process is signaled to terminate
+            while (1) {
+                poll_cycle(t0);
+            }
         }
     }
     else { // There's a call to fork
@@ -730,10 +788,18 @@ int main(int argc, char** argv) {
         std::chrono::time_point<std::chrono::system_clock> t1 = std::chrono::system_clock::now();
         double waiting = std::chrono::duration_cast<std::chrono::nanoseconds>(t1-t0).count() / 1e9;
         while (waiting < args.initial_wait) {
-            poll_cycle(t0);
+            poll_result = poll_cycle(t0);
             t1 = std::chrono::system_clock::now();
             waiting = std::chrono::duration_cast<std::chrono::nanoseconds>(t1-t0).count() / 1e9;
         }
+        // After initial wait expires, change initial temperatures
+        set_initial_temperatures();
+        args.error_log << "@@Initial wait concludes at " << std::chrono::duration_cast<std::chrono::nanoseconds>(t1-t_minus_one).count() / 1e9 << "s" << std::endl
+                       << "@@Launching wrapped command: ";
+        int argidx = 0;
+        while(args.wrapped[argidx] != nullptr)
+            args.error_log << args.wrapped[argidx++] << " ";
+        args.error_log << std::endl;
         // Fork call
         pid_t pid = fork();
         if (pid == -1) {
@@ -756,9 +822,11 @@ int main(int argc, char** argv) {
             do {
                 // Briefly check in on child process, then go back to collecting results
                 result = waitpid(pid, &status, WNOHANG);
-                poll_cycle(t0);
+                poll_result = poll_cycle(t0);
             }
             while (result == 0);
+            std::chrono::time_point<std::chrono::system_clock> t2 = std::chrono::system_clock::now();
+            args.error_log << "@@Wrapped command concludes at " << std::chrono::duration_cast<std::chrono::nanoseconds>(t2-t_minus_one).count() / 1e9 << "s" << std::endl;
 
             // Waiting is over
             if (result == -1) {
@@ -775,19 +843,27 @@ int main(int argc, char** argv) {
             }
 
             // Post Wait
+            t2 = std::chrono::system_clock::now();
+            args.error_log << "@@Post wait begins at " << std::chrono::duration_cast<std::chrono::nanoseconds>(t2-t_minus_one).count() / 1e9 << "s" << std::endl;
             if (args.debug >= DebugVerbose)
-                args.error_log << "Begin post wait. Should last " << args.post_wait << " seconds" << std::endl;
-            std::chrono::time_point<std::chrono::system_clock> t2 = std::chrono::system_clock::now();
+                args.error_log << "Post wait can last up to " << args.post_wait << " seconds" << std::endl;
+            t2 = std::chrono::system_clock::now();
             t1 = std::chrono::system_clock::now();
             waiting = std::chrono::duration_cast<std::chrono::nanoseconds>(t1-t2).count() / 1e9;
             if (args.post_wait < 0) {
                 // Maximal wait enforced here
                 while (waiting < -args.post_wait) {
+                        if (args.debug >= DebugVerbose) {
+                            args.error_log << poll_result << " / " << n_to_satisfy << " temperatures reached initial thresholds" << std::endl;
+                        }
                     // Check for initial temperature match
-                    if (false) {
+                    if (poll_result == n_to_satisfy) {
                         break;
                     }
-                    poll_cycle(t0);
+                    else if (args.debug >= DebugVerbose) {
+                        args.error_log << "Waited " << waiting << " seconds; will wait for temperature normalization or until " << -args.post_wait << " seconds elapse" << std::endl;
+                    }
+                    poll_result = poll_cycle(t0);
                     t1 = std::chrono::system_clock::now();
                     waiting = std::chrono::duration_cast<std::chrono::nanoseconds>(t1-t2).count() / 1e9;
                 }
@@ -795,11 +871,13 @@ int main(int argc, char** argv) {
             else {
                 // Normal wait for a simple duration to expire
                 while (waiting < args.post_wait) {
-                    poll_cycle(t0);
+                    poll_result = poll_cycle(t0);
                     t1 = std::chrono::system_clock::now();
                     waiting = std::chrono::duration_cast<std::chrono::nanoseconds>(t1-t2).count() / 1e9;
                 }
             }
+            t2 = std::chrono::system_clock::now();
+            args.error_log << "@@Post wait ends at " << std::chrono::duration_cast<std::chrono::nanoseconds>(t2-t_minus_one).count() / 1e9 << "s" << std::endl;
         }
     }
 
