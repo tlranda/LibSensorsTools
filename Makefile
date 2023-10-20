@@ -20,7 +20,7 @@ else
     FLAGS := $(NVIDIA_FLAGS)
 endif
 
-SENSOR: sensor_tool.cpp safecuda.h
-	$(CPUCC) sensor_tool.cpp -o $(HOSTNAME)_sensors $(FLAGS)
+SENSOR: sensor_tool.cpp io_tools.cpp cpu_tools.cpp gpu_tools.cpp
+	$(CPUCC) sensor_tool.cpp io_tools.cpp cpu_tools.cpp gpu_tools.cpp -o $(HOSTNAME)_sensors $(FLAGS)
 
 
