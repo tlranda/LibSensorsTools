@@ -110,11 +110,11 @@ void shutdown(int s = 0) {
 int main(int argc, char** argv) {
     t_minus_one = std::chrono::system_clock::now();
     // Library initializations
-	auto const error = sensors_init(NULL);
-	if(error != 0) {
-		args.error_log << "LibSensors library did not initialize properly! Aborting..." << std::endl;
-		exit(EXIT_FAILURE);
-	}
+    auto const error = sensors_init(NULL);
+    if(error != 0) {
+        args.error_log << "LibSensors library did not initialize properly! Aborting..." << std::endl;
+        exit(EXIT_FAILURE);
+    }
     #ifdef GPU_ENABLED
     nvmlInit();
     #endif
