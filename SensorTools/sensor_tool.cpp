@@ -5,25 +5,20 @@ std::chrono::time_point<std::chrono::system_clock> t_minus_one;
 
 // Changes initial temperature threshold values to most recently updated value (does not create an update itself)
 void set_initial_temperatures(void) {
-    if (args.cpu) {
-        for (std::vector<cpu_cache>::iterator i = known_cpus.begin(); i != known_cpus.end(); i++) {
-            for (int j = 0; j < i->temperature.size(); j++) {
+    if (args.cpu)
+        for (std::vector<cpu_cache>::iterator i = known_cpus.begin(); i != known_cpus.end(); i++)
+            for (int j = 0; j < i->temperature.size(); j++)
                 i->initial_temperature[j] = i->temperature[j];
-            }
-        }
-    }
-    if (args.gpu) {
-        for (std::vector<gpu_cache>::iterator i = known_gpus.begin(); i != known_gpus.end(); i++) {
+    if (args.gpu)
+        for (std::vector<gpu_cache>::iterator i = known_gpus.begin(); i != known_gpus.end(); i++)
             i->gpu_initialTemperature = i->gpu_temperature;
-        }
-    }
 }
 
 // Prints the CSV header columns and immediate cached values from first read
 void print_header(void) {
     // Future calls to update_*() will log their results
     update = true;
-    if (args.format > 0) {
+    if (args.format != 0) {
         if (args.debug >= DebugVerbose)
             args.error_log << "Non-CSV format, no headers to set" << std::endl;
         return;
@@ -40,15 +35,12 @@ void print_header(void) {
     args.log << "timestamp";
     if (args.cpu) {
         // Temperature
-        for (std::vector<cpu_cache>::iterator i = known_cpus.begin(); i != known_cpus.end(); i++) {
-            for (int j = 0; j < i->temperature.size(); j++) {
+        for (std::vector<cpu_cache>::iterator i = known_cpus.begin(); i != known_cpus.end(); i++)
+            for (int j = 0; j < i->temperature.size(); j++)
                 args.log << ",cpu_" << i->chip_name << "_temperature_" << j;
-            }
-        }
         // Frequency
-        for (std::vector<freq_cache>::iterator i = known_freqs.begin(); i != known_freqs.end(); i++) {
+        for (std::vector<freq_cache>::iterator i = known_freqs.begin(); i != known_freqs.end(); i++)
             args.log << ",core_" << i->coreid << "_freq";
-        }
     }
     if (args.gpu) {
         for (std::vector<gpu_cache>::iterator i = known_gpus.begin(); i != known_gpus.end(); i++) {
@@ -83,6 +75,7 @@ int poll_cycle(std::chrono::time_point<std::chrono::system_clock> t0) {
         //at_or_below_initial_temperature += update_gpus();
     }
     args.log << std::endl;
+    // JSON format is different
     if (args.debug >= DebugMinimal) {
         std::chrono::time_point<std::chrono::system_clock> t2 = std::chrono::system_clock::now();
         args.error_log << "Updates completed in " << std::chrono::duration_cast<std::chrono::nanoseconds>(t2-t1).count() / 1e9 << "s" << std::endl;
@@ -96,6 +89,7 @@ int poll_cycle(std::chrono::time_point<std::chrono::system_clock> t0) {
 // Cleanup calls should be based on globally available information; process-killing interrupts will go through this function
 void shutdown(int s = 0) {
     std::chrono::time_point<std::chrono::system_clock> t0 = std::chrono::system_clock::now();
+    // JSON format is different
     args.error_log << "@@Shutdown at " << std::chrono::duration_cast<std::chrono::nanoseconds>(t0-t_minus_one).count() / 1e9 << "s" << std::endl;
     if (args.debug >= DebugMinimal) args.error_log << "Run shutdown with signal " << s << std::endl;
     #ifdef GPU_ENABLED
@@ -131,9 +125,8 @@ int main(int argc, char** argv) {
 
     // Command line argument parsing
     parse(argc, argv);
-    if (args.debug >= DebugVerbose) {
-        args.error_log << "The program lives" << std::endl;
-    }
+    if (args.debug >= DebugVerbose) args.error_log << "The program lives" << std::endl;
+    // JSON should be different
     if (args.debug >= DebugMinimal) {
         args.error_log << "Arguments evaluate to" << std::endl <<
         "Help: " << args.help << std::endl <<
@@ -156,12 +149,15 @@ int main(int argc, char** argv) {
         "Debug: " << args.debug << std::endl <<
         "Version: " << args.version << std::endl <<
         "Wrapped call: ";
-        int argidx = 0;
-        while(args.wrapped[argidx] != nullptr)
-            args.error_log << args.wrapped[argidx++] << " ";
+        if (args.wrapped != nullptr) {
+            int argidx = 0;
+            while(args.wrapped[argidx] != nullptr) args.error_log << args.wrapped[argidx++] << " ";
+        }
+        else args.error_log << "N/A";
         args.error_log << std::endl;
     }
 
+    // JSON should be different
     // Denote library versions
     if (args.debug >= DebugVerbose || args.version) {
         args.error_log << "SensorTools v" << SensorToolsVersion << std::endl;
@@ -186,21 +182,14 @@ int main(int argc, char** argv) {
 
     // Start timing
     std::chrono::time_point<std::chrono::system_clock> t0 = std::chrono::system_clock::now();
+    // JSON should be different
     args.error_log << "@@Initialized at " << std::chrono::duration_cast<std::chrono::nanoseconds>(t0-t_minus_one).count() / 1e9 << "s" << std::endl;
 
     // Main Loop
     int poll_result, n_to_satisfy = cpus_to_satisfy + gpus_to_satisfy;
     if (args.wrapped == nullptr) {
-        if (poll_result == 0) {
-            // Single event collection
-            poll_cycle(t0);
-        }
-        else {
-            // No wrapping, monitor until the process is signaled to terminate
-            while (1) {
-                poll_cycle(t0);
-            }
-        }
+        if (args.poll == 0) poll_cycle(t_minus_one); // Single event collection
+        else while (1) poll_cycle(t_minus_one); // No wrapping, monitor until the process is signaled to terminate
     }
     else { // There's a call to fork
         // Initial Wait
@@ -209,17 +198,17 @@ int main(int argc, char** argv) {
         std::chrono::time_point<std::chrono::system_clock> t1 = std::chrono::system_clock::now();
         double waiting = std::chrono::duration_cast<std::chrono::nanoseconds>(t1-t0).count() / 1e9;
         while (waiting < args.initial_wait) {
-            poll_result = poll_cycle(t0);
+            poll_result = poll_cycle(t_minus_one);
             t1 = std::chrono::system_clock::now();
             waiting = std::chrono::duration_cast<std::chrono::nanoseconds>(t1-t0).count() / 1e9;
         }
         // After initial wait expires, change initial temperatures
         set_initial_temperatures();
+        // JSON should be different
         args.error_log << "@@Initial wait concludes at " << std::chrono::duration_cast<std::chrono::nanoseconds>(t1-t_minus_one).count() / 1e9 << "s" << std::endl
                        << "@@Launching wrapped command: ";
         int argidx = 0;
-        while(args.wrapped[argidx] != nullptr)
-            args.error_log << args.wrapped[argidx++] << " ";
+        while(args.wrapped[argidx] != nullptr) args.error_log << args.wrapped[argidx++] << " ";
         args.error_log << std::endl;
         // Fork call
         pid_t pid = fork();
@@ -247,6 +236,7 @@ int main(int argc, char** argv) {
             }
             while (result == 0);
             std::chrono::time_point<std::chrono::system_clock> t2 = std::chrono::system_clock::now();
+            // JSON should be different
             args.error_log << "@@Wrapped command concludes at " << std::chrono::duration_cast<std::chrono::nanoseconds>(t2-t_minus_one).count() / 1e9 << "s" << std::endl;
 
             // Waiting is over
@@ -254,36 +244,26 @@ int main(int argc, char** argv) {
                 args.error_log << "Wait on child process failed" << std::endl;
                 exit(EXIT_FAILURE);
             }
-            if (WIFEXITED(status)) {
-                int exit_status = WEXITSTATUS(status);
-                args.error_log << "Child process exits with status " << exit_status << std::endl;
-            }
-            else if (WIFSIGNALED(status)) {
-                int signal_number = WTERMSIG(status);
-                args.error_log << "Child process caught/terminated by signal " << signal_number << std::endl;
-            }
+            if (WIFEXITED(status)) args.error_log << "Child process exits with status " << WEXITSTATUS(status) << std::endl;
+            else if (WIFSIGNALED(status)) args.error_log << "Child process caught/terminated by signal " << WTERMSIG(status) << std::endl;
 
             // Post Wait
             t2 = std::chrono::system_clock::now();
+            // JSON should be different
             args.error_log << "@@Post wait begins at " << std::chrono::duration_cast<std::chrono::nanoseconds>(t2-t_minus_one).count() / 1e9 << "s" << std::endl;
-            if (args.debug >= DebugVerbose)
-                args.error_log << "Post wait can last up to " << args.post_wait << " seconds" << std::endl;
+            if (args.debug >= DebugVerbose) args.error_log << "Post wait can last up to " << args.post_wait << " seconds" << std::endl;
             t2 = std::chrono::system_clock::now();
             t1 = std::chrono::system_clock::now();
             waiting = std::chrono::duration_cast<std::chrono::nanoseconds>(t1-t2).count() / 1e9;
             if (args.post_wait < 0) {
                 // Maximal wait enforced here
                 while (waiting < -args.post_wait) {
-                        if (args.debug >= DebugVerbose) {
-                            args.error_log << poll_result << " / " << n_to_satisfy << " temperatures reached initial thresholds" << std::endl;
-                        }
+                    if (args.debug >= DebugVerbose)
+                        args.error_log << poll_result << " / " << n_to_satisfy << " temperatures reached initial thresholds" << std::endl;
                     // Check for initial temperature match
-                    if (poll_result == n_to_satisfy) {
-                        break;
-                    }
-                    else if (args.debug >= DebugVerbose) {
+                    if (poll_result == n_to_satisfy) break;
+                    else if (args.debug >= DebugVerbose)
                         args.error_log << "Waited " << waiting << " seconds; will wait for temperature normalization or until " << -args.post_wait << " seconds elapse" << std::endl;
-                    }
                     poll_result = poll_cycle(t0);
                     t1 = std::chrono::system_clock::now();
                     waiting = std::chrono::duration_cast<std::chrono::nanoseconds>(t1-t2).count() / 1e9;
@@ -297,14 +277,14 @@ int main(int argc, char** argv) {
                     waiting = std::chrono::duration_cast<std::chrono::nanoseconds>(t1-t2).count() / 1e9;
                 }
             }
+            // JSON should be different
             t2 = std::chrono::system_clock::now();
             args.error_log << "@@Post wait ends at " << std::chrono::duration_cast<std::chrono::nanoseconds>(t2-t_minus_one).count() / 1e9 << "s" << std::endl;
         }
     }
 
-    if (args.debug >= DebugVerbose) {
+    if (args.debug >= DebugVerbose)
         args.error_log << "The program ends" << std::endl;
-    }
 
     // Shutdown
     shutdown();
