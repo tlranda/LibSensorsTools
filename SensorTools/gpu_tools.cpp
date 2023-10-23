@@ -19,9 +19,7 @@ void cache_gpus(void) {
     cudaGetDeviceCount(&n_devices);
 
     for (int i = 0; i <= n_devices; i++) {
-        if (args.debug >= DebugVerbose) {
-            args.error_log << "Begin caching GPU " << i << std::endl;
-        }
+        if (args.debug >= DebugVerbose) args.error_log << "Begin caching GPU " << i << std::endl;
         // Prepare candidate
         gpu_cache candidate;
         candidate.device_ID = i;
@@ -40,20 +38,15 @@ void cache_gpus(void) {
         nvmlDeviceGetMemoryInfo(candidate.device_Handle, &candidate.memory);
         nvmlDeviceGetPerformanceState(candidate.device_Handle, &candidate.pState);
 
-        if (args.debug >= DebugVerbose) {
-            args.error_log << "Finished caching GPU " << i << std::endl;
-        }
+        if (args.debug >= DebugVerbose) args.error_log << "Finished caching GPU " << i << std::endl;
         known_gpus.push_back(candidate);
         gpus_to_satisfy += 2;
     }
-    if (args.debug >= DebugMinimal) {
-        args.error_log << "Tracking " << gpus_to_satisfy << " GPU temperature sensors" << std::endl;
-    }
+    if (args.debug >= DebugMinimal) args.error_log << "Tracking " << gpus_to_satisfy << " GPU temperature sensors" << std::endl;
 }
 #else
 void cache_gpus(void) {
-    if (args.debug >= DebugMinimal)
-        args.error_log << "Not compiled with GPU_ENABLED definition -- no GPU support" << std::endl;
+    if (args.debug >= DebugMinimal) args.error_log << "Not compiled with GPU_ENABLED definition -- no GPU support" << std::endl;
 }
 #endif
 
@@ -108,11 +101,12 @@ int update_gpus(void) {
 }
 #else
 int update_gpus(void) {
-    if (args.debug >= DebugVerbose)
-        args.error_log << "No GPU updates -- Not compiled with GPU_ENABLED definition" << std::endl;
+    if (args.debug >= DebugVerbose) args.error_log << "No GPU updates -- Not compiled with GPU_ENABLED definition" << std::endl;
     return 0;
 }
 #endif
+
+
 
 // Definition of external variables for GPU tools
 std::vector<gpu_cache> known_gpus;

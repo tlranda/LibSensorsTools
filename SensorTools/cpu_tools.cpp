@@ -27,47 +27,40 @@ void cache_cpus(void) {
         memset(candidate.chip_name, 0, NAME_BUFFER_SIZE);
         sensors_snprintf_chip_name(candidate.chip_name, NAME_BUFFER_SIZE, temp_name);
         candidate.name = temp_name;
-        if (args.debug >= DebugVerbose) {
+        if (args.debug >= DebugVerbose)
             args.error_log << "Begin caching chip " << candidate.chip_name << std::endl;
-        }
 
         // Feature determination
         const sensors_feature* temp_feature = sensors_get_features(temp_name, &nr_feature);
         while(temp_feature) {
-            if (args.debug >= DebugVerbose) {
+            if (args.debug >= DebugVerbose)
                 args.error_log << "\tInspect feature " << nr_feature << " with type " << temp_feature->type << " (hit on type == " << SENSORS_FEATURE_TEMP << ")" << std::endl;
-            }
             // We only care about this type of feature
             if (temp_feature->type == SENSORS_FEATURE_TEMP) {
                 candidate.features.push_back(temp_feature);
                 // Skip directly to input subfeature value
                 const sensors_subfeature* temp_subfeature = sensors_get_subfeature(temp_name, temp_feature, nr_subfeature);
-                if (args.debug >= DebugVerbose) {
+                if (args.debug >= DebugVerbose)
                     args.error_log << "\t\tFeature hit. Acquiring temperature subfeature " << nr_subfeature << std::endl;
-                }
                 candidate.subfeatures.push_back(temp_subfeature);
                 sensors_get_value(temp_name, temp_subfeature->number, &value);
-                if (args.debug >= DebugVerbose) {
+                if (args.debug >= DebugVerbose)
                     args.error_log << "\t\t\tTemperature value read: " << value << std::endl;
-                }
                 candidate.temperature.push_back(value);
                 candidate.initial_temperature.push_back(value);
                 cpus_to_satisfy++;
             }
             temp_feature = sensors_get_features(temp_name, &nr_feature);
         }
-        if (args.debug >= DebugVerbose) {
+        if (args.debug >= DebugVerbose)
             args.error_log << "Finished inspecting chip " << candidate.chip_name;
-        }
         if (!candidate.temperature.empty()) {
             known_cpus.push_back(candidate);
-            if (args.debug >= DebugVerbose) {
+            if (args.debug >= DebugVerbose)
                 args.error_log << " , added to known CPUs" << std::endl;
-            }
         }
-        else if (args.debug >= DebugVerbose) {
+        else if (args.debug >= DebugVerbose)
             args.error_log << " , but discarded due to empty temperature reads" << std::endl;
-        }
     }
 
     // Cache CPU frequencies via file pointers
@@ -92,13 +85,11 @@ void cache_cpus(void) {
                     if (args.debug >= DebugVerbose)
                         args.error_log << "Found CPU freq for core " << n_cpu << std::endl;
                 }
-                else if (args.debug >= DebugMinimal) {
+                else if (args.debug >= DebugMinimal)
                     args.error_log << "Unable to read CPU freq for core " << n_cpu << ", so it is not cached" << std::endl;
-                }
             }
-            else if (args.debug >= DebugMinimal) {
+            else if (args.debug >= DebugMinimal)
                 args.error_log << "Unable to open CPU freq for core " << n_cpu << ", but its file should exist!" << std::endl;
-            }
         }
         else {
             if (args.debug >= DebugVerbose)
@@ -107,9 +98,8 @@ void cache_cpus(void) {
         }
         n_cpu++;
     }
-    if (args.debug >= DebugMinimal) {
+    if (args.debug >= DebugMinimal)
         args.error_log << "Tracking " << cpus_to_satisfy << " CPU temperature sensors" << std::endl;
-    }
 }
 
 
@@ -148,12 +138,9 @@ int update_cpus(void) {
     for (std::vector<freq_cache>::iterator i = known_freqs.begin(); i != known_freqs.end(); i++) {
         rewind(i->fhandle);
         int nbytes = fread(buf, sizeof(char), NAME_BUFFER_SIZE, i->fhandle);
-        if (nbytes <= 0 && args.debug >= DebugMinimal) {
+        if (nbytes <= 0 && args.debug >= DebugMinimal)
             args.error_log << "Unable to update frequency for CPU " << i->coreid << std::endl;
-        }
-        else {
-            i->hz = std::stoi(buf);
-        }
+        else i->hz = std::stoi(buf);
         if (args.debug >= DebugVerbose || update) {
             switch (args.format) {
                 case 0:

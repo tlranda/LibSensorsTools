@@ -79,7 +79,7 @@ void parse(int argc, char** argv) {
         {"help", no_argument, 0, 'h'},
         {"cpu", no_argument, 0, 'c'},
         {"gpu", no_argument, 0, 'g'},
-        {"full-format", no_argument, 0, 'f'},
+        {"format", no_argument, 0, 'f'},
         {"log", required_argument, 0, 'l'},
         {"errorlog", required_argument, 0, 'L'},
         {"poll", required_argument, 0, 'p'},
@@ -114,8 +114,8 @@ void parse(int argc, char** argv) {
                              "Query CPU stats only (default: CPU and GPU)" << std::endl;
                 std::cout << "\t-g | --gpu\n\t\t" <<
                              "Query GPU stats only (default: GPU and CPU)" << std::endl;
-                std::cout << "\t-f | --full-format\n\t\t" <<
-                             "Output in full text rather than CSV format" << std::endl;
+                std::cout << "\t-f | --format\n\t\t" <<
+                             "Output format [0 = CSV == default | 1 = human-readable | 2 = JSON]" << std::endl;
                 std::cout << "\t-l [file] | --log [file]\n\t\t" <<
                              "File to write output to" << std::endl;
                 std::cout << "\t-L [file] | --errorlog [file]\n\t\t" <<
@@ -132,7 +132,7 @@ void parse(int argc, char** argv) {
                 std::cout << "\t-v | --version\n\t\t" <<
                              "Ouput version of SensorTools and dependent libraries" << std::endl;
                 std::cout << std::endl << "To automatically wrap another command with sensing for its duration, specify that command after the '--' argument" <<
-                          std::endl << "ie: " << PROGNAME << " -- sleep 3" << std::endl;
+                             std::endl << "ie: " << PROGNAME << " -- sleep 3" << std::endl;
                 exit(EXIT_SUCCESS);
             case 'c':
                 args.cpu = true;
@@ -158,10 +158,7 @@ void parse(int argc, char** argv) {
                                  "\n\tPolling duration must be greater than 0" << std::endl;
                     bad_args += 1;
                 }
-                else {
-                    // Set sleep time for nanosleep
-                    args.poll_duration = static_cast<std::chrono::duration<double>>(args.poll);
-                }
+                else args.poll_duration = static_cast<std::chrono::duration<double>>(args.poll); // Set sleep time for nanosleep
                 break;
             case 'i':
                 args.initial_wait = atof(optarg);
@@ -170,9 +167,7 @@ void parse(int argc, char** argv) {
                                 "\n\tInitial wait duration must be greater than 0" << std::endl;
                     bad_args += 1;
                 }
-                else {
-                    args.initial_duration = static_cast<std::chrono::duration<double>>(args.initial_wait);
-                }
+                else args.initial_duration = static_cast<std::chrono::duration<double>>(args.initial_wait);
                 break;
             case 'w':
                 args.post_wait = atof(optarg);
@@ -206,8 +201,7 @@ void parse(int argc, char** argv) {
         args.wrapped = const_cast<char**>(&argv[optind]);
         if (args.debug >= DebugMinimal) {
             std::cerr << "Treating additional arguments as a command to wrap:" << std::endl;
-            for (int i = 0; i < argc-optind; i++)
-                std::cerr << args.wrapped[i] << " ";
+            for (int i = 0; i < argc-optind; i++) std::cerr << args.wrapped[i] << " ";
             std::cerr << std::endl;
         }
         if (args.poll == 0) {
@@ -217,9 +211,7 @@ void parse(int argc, char** argv) {
     }
     else args.wrapped = nullptr;
 
-    if (bad_args > 0) {
-        exit(EXIT_FAILURE);
-    }
+    if (bad_args > 0) exit(EXIT_FAILURE);
 }
 
 
