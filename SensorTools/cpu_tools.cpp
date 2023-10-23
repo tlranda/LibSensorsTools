@@ -113,6 +113,7 @@ int update_cpus(void) {
             if (args.debug >= DebugVerbose) {
                 switch (args.format) {
                     case 0:
+                    case 2:
                         break;
                     case 1:
                         args.log << "Chip " << i->chip_name << " temp BEFORE " << prev << std::endl;
@@ -128,6 +129,9 @@ int update_cpus(void) {
                         break;
                     case 1:
                         args.log << " temp NOW " << i->temperature[j] << std::endl;
+                        break;
+                    case 2:
+                        args.log << "\t\"cpu-" << i->chip_name << "-temperature-" << j << "\": " << i->temperature[j] << "," << std::endl;
                         break;
                 }
             }
@@ -148,6 +152,9 @@ int update_cpus(void) {
                     break;
                 case 1:
                     args.log << "Core " << i->coreid << " Frequency: " << i->hz << std::endl;
+                    break;
+                case 2:
+                    args.log << "\t\"core-" << i->coreid << "-frequency\": " << i->hz << "," << std::endl;
                     break;
             }
         }

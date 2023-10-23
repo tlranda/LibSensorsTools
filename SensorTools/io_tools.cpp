@@ -79,7 +79,7 @@ void parse(int argc, char** argv) {
         {"help", no_argument, 0, 'h'},
         {"cpu", no_argument, 0, 'c'},
         {"gpu", no_argument, 0, 'g'},
-        {"format", no_argument, 0, 'f'},
+        {"format", required_argument, 0, 'f'},
         {"log", required_argument, 0, 'l'},
         {"errorlog", required_argument, 0, 'L'},
         {"poll", required_argument, 0, 'p'},
@@ -89,7 +89,7 @@ void parse(int argc, char** argv) {
         {"version", no_argument, 0, 'v'},
         {0,0,0,0}
     };
-    const char* optionstr = "hcgfl:L:p:i:w:d:v";
+    const char* optionstr = "hcgf:l:L:p:i:w:d:v";
     // Disable getopt's automatic error message -- we'll catch it via the '?' return and shut down
     opterr = 0;
 
@@ -114,7 +114,7 @@ void parse(int argc, char** argv) {
                              "Query CPU stats only (default: CPU and GPU)" << std::endl;
                 std::cout << "\t-g | --gpu\n\t\t" <<
                              "Query GPU stats only (default: GPU and CPU)" << std::endl;
-                std::cout << "\t-f | --format\n\t\t" <<
+                std::cout << "\t-f [level] | --format [level]\n\t\t" <<
                              "Output format [0 = CSV == default | 1 = human-readable | 2 = JSON]" << std::endl;
                 std::cout << "\t-l [file] | --log [file]\n\t\t" <<
                              "File to write output to" << std::endl;
@@ -141,7 +141,7 @@ void parse(int argc, char** argv) {
                 args.gpu = true;
                 break;
             case 'f':
-                args.format = 1; // Not-CSV
+                args.format = atoi(optarg);
                 break;
             case 'l':
                 args.log_path = std::filesystem::path(optarg);

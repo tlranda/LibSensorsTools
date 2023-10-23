@@ -59,7 +59,16 @@ int poll_cycle(std::chrono::time_point<std::chrono::system_clock> t0) {
     int at_or_below_initial_temperature = 0;
     // Timestamp
     std::chrono::time_point<std::chrono::system_clock> t1 = std::chrono::system_clock::now();
-    args.log << std::chrono::duration_cast<std::chrono::nanoseconds>(t1-t0).count() / 1e9;
+    switch (args.format) {
+        case 1:
+            args.log << "Poll update at ";
+        case 0:
+            args.log << std::chrono::duration_cast<std::chrono::nanoseconds>(t1-t0).count() / 1e9;
+            break;
+        case 2:
+            args.log << "{\"event\": \"poll-data\", \"timestamp\": " << std::chrono::duration_cast<std::chrono::nanoseconds>(t1-t0).count() / 1e9 << "," << std::endl;
+            break;
+    }
 
     // Collection
     if (args.cpu) {
@@ -74,11 +83,24 @@ int poll_cycle(std::chrono::time_point<std::chrono::system_clock> t0) {
         at_or_below_initial_temperature += update;
         //at_or_below_initial_temperature += update_gpus();
     }
-    args.log << std::endl;
-    // JSON format is different
-    if (args.debug >= DebugMinimal) {
-        std::chrono::time_point<std::chrono::system_clock> t2 = std::chrono::system_clock::now();
-        args.error_log << "Updates completed in " << std::chrono::duration_cast<std::chrono::nanoseconds>(t2-t1).count() / 1e9 << "s" << std::endl;
+    switch (args.format) {
+        case 0:
+        case 1:
+            args.log << std::endl;
+            if (args.debug >= DebugMinimal) {
+                std::chrono::time_point<std::chrono::system_clock> t2 = std::chrono::system_clock::now();
+                args.error_log << "Updates completed in " << std::chrono::duration_cast<std::chrono::nanoseconds>(t2-t1).count() / 1e9 << "s" << std::endl;
+            }
+            break;
+        case 2:
+            // Have to add a dummy end for JSON record to be compliant
+            args.log << "\"dummy-end\": true" << std::endl;
+            args.log << "}," << std::endl;
+            std::chrono::time_point<std::chrono::system_clock> t2 = std::chrono::system_clock::now();
+            args.log << "{\"event\": \"poll-update\", \"duration\": " <<
+                     std::chrono::duration_cast<std::chrono::nanoseconds>(t2-t1).count() / 1e9 <<
+                     "}," << std::endl;
+            break;
     }
     // Sleeping between polls
     if (args.poll != 0) std::this_thread::sleep_for(args.poll_duration);
@@ -89,8 +111,14 @@ int poll_cycle(std::chrono::time_point<std::chrono::system_clock> t0) {
 // Cleanup calls should be based on globally available information; process-killing interrupts will go through this function
 void shutdown(int s = 0) {
     std::chrono::time_point<std::chrono::system_clock> t0 = std::chrono::system_clock::now();
-    // JSON format is different
-    args.error_log << "@@Shutdown at " << std::chrono::duration_cast<std::chrono::nanoseconds>(t0-t_minus_one).count() / 1e9 << "s" << std::endl;
+    if (args.format == 2) {
+        args.log << "{ \"event\": \"shutdown\", \"timestamp\": " <<
+                 std::chrono::duration_cast<std::chrono::nanoseconds>(t0-t_minus_one).count() / 1e9 <<
+                 " }" << std::endl <<
+                 "]" << std::endl;
+    }
+    else
+        args.error_log << "@@Shutdown at " << std::chrono::duration_cast<std::chrono::nanoseconds>(t0-t_minus_one).count() / 1e9 << "s" << std::endl;
     if (args.debug >= DebugMinimal) args.error_log << "Run shutdown with signal " << s << std::endl;
     #ifdef GPU_ENABLED
     nvmlShutdown();
@@ -126,8 +154,31 @@ int main(int argc, char** argv) {
     // Command line argument parsing
     parse(argc, argv);
     if (args.debug >= DebugVerbose) args.error_log << "The program lives" << std::endl;
-    // JSON should be different
-    if (args.debug >= DebugMinimal) {
+    if (args.format == 2) {
+        args.log << "[" << std::endl;
+        args.log << "{\"arguments\": { " << std::endl <<
+                    "\t\"help\": " << args.help << "," << std::endl <<
+                    "\t\"cpu\": " << args.cpu << "," << std::endl <<
+                    "\t\"gpu\": " << args.gpu << "," << std::endl <<
+                    "\t\"format\": \"json\"," << std::endl <<
+                    "\t\"log\": \"" << args.log << "\"," << std::endl <<
+                    "\t\"error-log\": \"" << args.error_log << "\"," << std::endl <<
+                    "\t\"poll\": " << args.poll << "," << std::endl <<
+                    "\t\"initial-wait\": " << args.initial_wait << "," << std::endl <<
+                    "\t\"post-wait\": " << args.post_wait << "," << std::endl <<
+                    "\t\"debug\": " << args.debug << "," << std::endl <<
+                    "\t\"version\": \"" << args.version << "\"," << std::endl <<
+                    "\t\"wrapped-call\": ";
+        if (args.wrapped == nullptr) args.log << "null" << std::endl;
+        else {
+            int argidx = 0;
+            args.log << "\"";
+            while(args.wrapped[argidx] != nullptr) args.log << args.wrapped[argidx++] << " ";
+            args.log << "\"" << std::endl;
+        }
+        args.log << "\t}" << std::endl << "}," << std::endl;
+    }
+    else if (args.debug >= DebugMinimal) {
         args.error_log << "Arguments evaluate to" << std::endl <<
         "Help: " << args.help << std::endl <<
         "CPU: " << args.cpu << std::endl <<
@@ -157,9 +208,24 @@ int main(int argc, char** argv) {
         args.error_log << std::endl;
     }
 
-    // JSON should be different
     // Denote library versions
-    if (args.debug >= DebugVerbose || args.version) {
+    if (args.format == 2) {
+        args.log << "{\"versions\": {" << std::endl <<
+                    "\t\"SensorTools\": \"" << SensorToolsVersion << "\"," << std::endl <<
+                    "\t\"LibSensors\": \"" << libsensors_version << "\"";
+        #ifdef GPU_ENABLED
+        int NVML_VERSION;
+        char NVML_DRIVER_VERSION[NAME_BUFFER_SIZE];
+        nvmlSystemGetCudaDriverVersion(&NVML_VERSION);
+        nvmlSystemGetDriverVersion(NVML_DRIVER_VERSION, NAME_BUFFER_SIZE);
+        args.log << "," << std::endl << "\t\"NVML\": \"" << NVML_VERSION << "\"," << std::endl <<
+                    "\t\"NVIDIA Driver\": \"" << NVML_DRIVER_VERSION << "\"" << std::endl;
+        #else
+        args.log << std::endl;
+        #endif
+        args.log << "\t}" << std::endl << "}," << std::endl;
+    }
+    else if (args.debug >= DebugVerbose || args.version) {
         args.error_log << "SensorTools v" << SensorToolsVersion << std::endl;
         args.error_log << "Using libsensors v" << libsensors_version << std::endl;
         #ifdef GPU_ENABLED
@@ -182,8 +248,8 @@ int main(int argc, char** argv) {
 
     // Start timing
     std::chrono::time_point<std::chrono::system_clock> t0 = std::chrono::system_clock::now();
-    // JSON should be different
-    args.error_log << "@@Initialized at " << std::chrono::duration_cast<std::chrono::nanoseconds>(t0-t_minus_one).count() / 1e9 << "s" << std::endl;
+    if (args.format == 2) args.log << "{\"event\": \"initialization\", \"duration\": " << std::chrono::duration_cast<std::chrono::nanoseconds>(t0-t_minus_one).count() / 1e9 << "}," << std::endl;
+    else args.error_log << "@@Initialized at " << std::chrono::duration_cast<std::chrono::nanoseconds>(t0-t_minus_one).count() / 1e9 << "s" << std::endl;
 
     // Main Loop
     int poll_result, n_to_satisfy = cpus_to_satisfy + gpus_to_satisfy;
@@ -193,9 +259,11 @@ int main(int argc, char** argv) {
     }
     else { // There's a call to fork
         // Initial Wait
-        if (args.debug >= DebugVerbose)
-            args.error_log << "Begin initial wait. Should last " << args.initial_wait << " seconds" << std::endl;
         std::chrono::time_point<std::chrono::system_clock> t1 = std::chrono::system_clock::now();
+        if (args.format == 2)
+            args.log << "{\"event\": \"initial-wait-start\", \"timestamp\": " << std::chrono::duration_cast<std::chrono::nanoseconds>(t1-t_minus_one).count() / 1e9 << "}," << std::endl;
+        else if (args.debug >= DebugVerbose)
+            args.error_log << "Begin initial wait. Should last " << args.initial_wait << " seconds" << std::endl;
         double waiting = std::chrono::duration_cast<std::chrono::nanoseconds>(t1-t0).count() / 1e9;
         while (waiting < args.initial_wait) {
             poll_result = poll_cycle(t_minus_one);
@@ -204,12 +272,16 @@ int main(int argc, char** argv) {
         }
         // After initial wait expires, change initial temperatures
         set_initial_temperatures();
-        // JSON should be different
-        args.error_log << "@@Initial wait concludes at " << std::chrono::duration_cast<std::chrono::nanoseconds>(t1-t_minus_one).count() / 1e9 << "s" << std::endl
-                       << "@@Launching wrapped command: ";
-        int argidx = 0;
-        while(args.wrapped[argidx] != nullptr) args.error_log << args.wrapped[argidx++] << " ";
-        args.error_log << std::endl;
+        if (args.format == 2) {
+            args.log << "{\"event\": \"initial-wait-end\", \"timestamp\": " << std::chrono::duration_cast<std::chrono::nanoseconds>(t1-t_minus_one).count() / 1e9 << "}," << std::endl;
+        }
+        else {
+            args.error_log << "@@Initial wait concludes at " << std::chrono::duration_cast<std::chrono::nanoseconds>(t1-t_minus_one).count() / 1e9 << "s" << std::endl
+                           << "@@Launching wrapped command: ";
+            int argidx = 0;
+            while(args.wrapped[argidx] != nullptr) args.error_log << args.wrapped[argidx++] << " ";
+            args.error_log << std::endl;
+        }
         // Fork call
         pid_t pid = fork();
         if (pid == -1) {
@@ -236,8 +308,10 @@ int main(int argc, char** argv) {
             }
             while (result == 0);
             std::chrono::time_point<std::chrono::system_clock> t2 = std::chrono::system_clock::now();
-            // JSON should be different
-            args.error_log << "@@Wrapped command concludes at " << std::chrono::duration_cast<std::chrono::nanoseconds>(t2-t_minus_one).count() / 1e9 << "s" << std::endl;
+            if (args.format == 2) {
+                args.log << "{\"event\": \"wrapped-command-end\", \"timestamp\": " << std::chrono::duration_cast<std::chrono::nanoseconds>(t2-t_minus_one).count() / 1e9 << "}," << std::endl;
+            }
+            else args.error_log << "@@Wrapped command concludes at " << std::chrono::duration_cast<std::chrono::nanoseconds>(t2-t_minus_one).count() / 1e9 << "s" << std::endl;
 
             // Waiting is over
             if (result == -1) {
@@ -249,8 +323,8 @@ int main(int argc, char** argv) {
 
             // Post Wait
             t2 = std::chrono::system_clock::now();
-            // JSON should be different
-            args.error_log << "@@Post wait begins at " << std::chrono::duration_cast<std::chrono::nanoseconds>(t2-t_minus_one).count() / 1e9 << "s" << std::endl;
+            if (args.format == 2) args.log << "{\"event\": \"post-wait-start\", \"timestamp\": " << std::chrono::duration_cast<std::chrono::nanoseconds>(t2-t_minus_one).count() / 1e9 << "}," << std::endl;
+            else args.error_log << "@@Post wait begins at " << std::chrono::duration_cast<std::chrono::nanoseconds>(t2-t_minus_one).count() / 1e9 << "s" << std::endl;
             if (args.debug >= DebugVerbose) args.error_log << "Post wait can last up to " << args.post_wait << " seconds" << std::endl;
             t2 = std::chrono::system_clock::now();
             t1 = std::chrono::system_clock::now();
@@ -277,9 +351,9 @@ int main(int argc, char** argv) {
                     waiting = std::chrono::duration_cast<std::chrono::nanoseconds>(t1-t2).count() / 1e9;
                 }
             }
-            // JSON should be different
             t2 = std::chrono::system_clock::now();
-            args.error_log << "@@Post wait ends at " << std::chrono::duration_cast<std::chrono::nanoseconds>(t2-t_minus_one).count() / 1e9 << "s" << std::endl;
+            if (args.format == 2) args.log << "{\"event\": \"post-wait-end\", \"timestamp\": " << std::chrono::duration_cast<std::chrono::nanoseconds>(t2-t_minus_one).count() / 1e9 << "}," << std::endl;
+            else args.error_log << "@@Post wait ends at " << std::chrono::duration_cast<std::chrono::nanoseconds>(t2-t_minus_one).count() / 1e9 << "s" << std::endl;
         }
     }
 

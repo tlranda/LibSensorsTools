@@ -58,6 +58,7 @@ int update_gpus(void) {
         if (args.debug >= DebugVerbose) {
             switch (args.format) {
                 case 0:
+                case 2:
                     break;
                 case 1:
                     args.log << "GPU " << i->device_ID << " " << i->deviceName << " BEFORE" << std::endl;
@@ -93,6 +94,18 @@ int update_gpus(void) {
                     args.log << "\tPower Usage/Limit: " << i->powerUsage << " / " << i->powerLimit << std::endl;
                     args.log << "\tUtilization: " << i->utilization.gpu << "\% GPU " << i->utilization.memory << "\% Memory " << std::endl;
                     args.log << "\tPerformance State: " << i->pState << std::endl;
+                    break;
+                case 2:
+                    args.log << "\t\"gpu-" << i->device_ID << "-name\": \"" << i->deviceName << "\"," << std::endl <<
+                                "\t\"gpu-" << i->device_ID << "-gpu-temperature\": " << i->gpu_temperature << "," << std::endl <<
+                                "\t\"gpu-" << i->device_ID << "-memory-temperature\": " << i->mem_temperature << "," << std::endl <<
+                                "\t\"gpu-" << i->device_ID << "-power-usage\": " << i->powerUsage << "," << std::endl <<
+                                "\t\"gpu-" << i->device_ID << "-power-limit\": " << i->powerLimit << "," << std::endl <<
+                                "\t\"gpu-" << i->device_ID << "-utilization-gpu\": " << i->utilization.gpu << "," << std::endl <<
+                                "\t\"gpu-" << i->device_ID << "-utilization-memory\": " << i->utilization.memory << "," << std::endl <<
+                                "\t\"gpu-" << i->device_ID << "-memory-used\": " << i->memory.used << "," << std::endl <<
+                                "\t\"gpu-" << i->device_ID << "-memory-total\": " << i->memory.total << "," << std::endl <<
+                                "\t\"gpu-" << i->device_ID << "-pstate\": " << i->pState << "," << std::endl;
                     break;
             }
         }
