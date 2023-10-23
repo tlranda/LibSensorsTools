@@ -83,6 +83,12 @@ For full options to customize program behaviors, you can use the `-h | --help` a
         - Some output will go to standard error no matter what:
             1) [NMW] Errors recognized while parsing sensor tool arguments
             2) [D1+] The recognized command to wrap
+* JSON output
+    + The `-f 2 | --format 2` argument will output the normal data in JSON rather than CSV format. Due to the flexibility of data coherency in JSONs, this unifies some key timing information (such as when a wrapped command starts and stops) all into a single output file for your downstream parsing purposes.
+        - The JSON format also automatically includes all arguments and versions in its records
+        - The recorded data is exactly the same, however the field naming conventions are changed to prefer '-' separators over '_' separators for CSVs.
+        - Due to the JSON format, each polling cycle ends with a dummy field called "dummy-end" which is always true.
+        - While the JSON format is larger on disk compared to the CSV format, we observe similar minimum update latency to the CSV and expect there is no significant difference in tool overhead/performance as the actual API access and data collation are more time-consuming than basic I/O.
 
 ## Contribute
 
