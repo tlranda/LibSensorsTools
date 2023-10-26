@@ -352,8 +352,22 @@ int main(int argc, char** argv) {
                 }
             }
             t2 = std::chrono::system_clock::now();
-            if (args.format == 2) args.log << "{\"event\": \"post-wait-end\", \"timestamp\": " << std::chrono::duration_cast<std::chrono::nanoseconds>(t2-t_minus_one).count() / 1e9 << "}," << std::endl;
-            else args.error_log << "@@Post wait ends at " << std::chrono::duration_cast<std::chrono::nanoseconds>(t2-t_minus_one).count() / 1e9 << "s" << std::endl;
+            if (args.format == 2) {
+                args.log << "{\"event\": \"post-wait-end\", \"timestamp\": " << std::chrono::duration_cast<std::chrono::nanoseconds>(t2-t_minus_one).count() / 1e9 << ", \"max-wait\": ";
+                if (args.post_wait < 0) {
+                    args.log << -args.post_wait << ", \"reason\": ";
+                    if (waiting < -args.post_wait) args.log << "\"temperature-early-exit\"";
+                    else args.log << "\"timeout\"";
+                }
+                else args.log << args.post_wait << ", \"reason\": \"timeout\"";
+                args.log << "}," << std::endl;
+            }
+            else {
+                args.error_log << "@@Post wait ends at " << std::chrono::duration_cast<std::chrono::nanoseconds>(t2-t_minus_one).count() / 1e9 << "s" << std::endl;
+                if (args.post_wait < 0 && waiting < -args.post_wait)
+                    args.error_log << "@@Post wait terminates due to temperature early exit" << std::endl;
+                else args.error_log << "@@Post wait terminates due to timeout" << std::endl;
+            }
         }
     }
 
