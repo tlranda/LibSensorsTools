@@ -11,6 +11,10 @@ def build():
                      help="Minimum timestamp difference for trace events to be acknowledged as different (default: %(default)s)")
     prs.add_argument("--min-temp-enforce", type=float, default=None,
                      help="Minimum temperature of a trace must be higher than this value to be plotted (default: %(default)s)")
+    prs.add_argument("--max-temp-enforce", type=float, default=None,
+                     help="Maximum temperature of a trace must be lower than this value to be plotted (default: %(default)s)")
+    prs.add_argument("--require-temperature-variance", action="store_true",
+                     help="Temperature must have nonzero standard deviation in order to be plotted (default: %(default)s)")
     return prs
 
 def parse(args=None, prs=None):
@@ -84,11 +88,17 @@ def main(args=None):
     ymin, ymax = np.inf, -np.inf
     for temps in temperature_data:
         if args.min_temp_enforce is not None and np.max(temps.data) < args.min_temp_enforce:
+            print(f"{temps.label} dropped due to minimum temperature enforcement (Max temp: {np.max(temps.data)})")
             continue
-        if np.std(temps.data) > 0:
-            ax.plot(temps.timestamps, temps.data, label=temps.label)
-            ymin = min(ymin, np.min(temps.data))
-            ymax = max(ymax, np.max(temps.data))
+        if args.max_temp_enforce is not None and np.min(temps.data) > args.max_temp_enforce:
+            print(f"{temps.label} dropped due to maximum temperature enforcement (Min temp: {np.min(temps.data)})")
+            continue
+        if args.require_temperature_variance and np.std(temps.data) == 0:
+            print(f"{temps.label} dropped due to no variance in temperature reading (Constant temperature: {np.mean(temps.data)})")
+            continue
+        ax.plot(temps.timestamps, temps.data, label=temps.label)
+        ymin = min(ymin, np.min(temps.data))
+        ymax = max(ymax, np.max(temps.data))
     for trace in traces:
         ax.vlines(trace.timestamp, 0, 1, transform=ax.get_xaxis_transform(), label=trace.label)
     ax.legend(loc='center left', bbox_to_anchor=(1.0, 0.5))
