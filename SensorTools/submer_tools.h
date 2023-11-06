@@ -23,20 +23,12 @@ typedef struct submer_cache_t {
     submer_cache_t() {}
     // Destructor
     ~submer_cache_t() {
-        /*
-        std::cout << "Destructor got called for cache " << index << std::endl;
-        if (args.shutdown) {
-            std::cout << "Actually going through with it!" << std::endl;
-        */
         if (curl_handle) {
-            std::cerr << "Freeing handle" << std::endl;
             curl_easy_cleanup(curl_handle);
         }
         if (response) {
-            std::cerr << "Freeing response" << std::endl;
             free(response);
         }
-        //}
     }
 } submer_cache;
 // End Class and Type declarations
