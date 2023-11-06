@@ -63,7 +63,9 @@ typedef struct argstruct {
     bool help = 0,
          cpu = 0,
          gpu = 0,
-         version = 0;
+         submer = 0,
+         version = 0,
+         shutdown = 0;
     short format = 0, debug = 0;
     std::filesystem::path log_path, error_log_path;
     Output log, error_log = Output(false);

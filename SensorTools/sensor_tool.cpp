@@ -12,6 +12,11 @@ void set_initial_temperatures(void) {
     if (args.gpu)
         for (std::vector<gpu_cache>::iterator i = known_gpus.begin(); i != known_gpus.end(); i++)
             i->gpu_initialTemperature = i->gpu_temperature;
+    if (args.submer)
+        for (std::vector<std::unique_ptr<submer_cache>>::iterator i = known_submers.begin(); i != known_submers.end(); i++) {
+            submer_cache* j = i->get();
+            j->initialSubmerTemperature = j->json_data["temperature"];
+        }
 }
 
 // Prints the CSV header columns and immediate cached values from first read
@@ -51,6 +56,12 @@ void print_header(void) {
                      i->device_ID << "_memory_total,gpu_" << i->device_ID << "_pstate";
         }
     }
+    if (args.submer) {
+        for (std::vector<std::unique_ptr<submer_cache>>::iterator i = known_submers.begin(); i != known_submers.end(); i++) {
+            submer_cache* j = i->get();
+            args.log << ",submer_" << j->index, "_temperature";
+        }
+    }
     args.log << std::endl;
 }
 
@@ -82,6 +93,12 @@ int poll_cycle(std::chrono::time_point<std::chrono::system_clock> t0) {
         if (args.debug >= DebugVerbose) args.error_log << "GPUs have " << update << " / " << gpus_to_satisfy << " satisfied temperatures" << std::endl;
         at_or_below_initial_temperature += update;
         //at_or_below_initial_temperature += update_gpus();
+    }
+    if (args.submer) {
+        int update = update_submers();
+        if (args.debug >= DebugVerbose) args.error_log << "Pods have " << update << " / " << submers_to_satisfy << " satisfied temperatures" << std::endl;
+        at_or_below_initial_temperature += update;
+        //at_or_below_initial_temperature += update_submers();
     }
     switch (args.format) {
         case 0:
@@ -123,6 +140,7 @@ void shutdown(int s = 0) {
     #ifdef GPU_ENABLED
     nvmlShutdown();
     #endif
+    curl_global_cleanup();
     sensors_cleanup();
     if (args.debug >= DebugMinimal) args.error_log << "Shutdown clean. Exiting..." << std::endl;
     exit(EXIT_SUCCESS);
@@ -140,6 +158,7 @@ int main(int argc, char** argv) {
     #ifdef GPU_ENABLED
     nvmlInit();
     #endif
+    curl_global_init(CURL_GLOBAL_ALL);
 
     // Prepare shutdown via CTRL+C or other signals
     struct sigaction sigHandler;
@@ -160,6 +179,7 @@ int main(int argc, char** argv) {
                     "\t\"help\": " << args.help << "," << std::endl <<
                     "\t\"cpu\": " << args.cpu << "," << std::endl <<
                     "\t\"gpu\": " << args.gpu << "," << std::endl <<
+                    "\t\"submer\": " << args.submer << "," << std::endl <<
                     "\t\"format\": \"json\"," << std::endl <<
                     "\t\"log\": \"" << args.log << "\"," << std::endl <<
                     "\t\"error-log\": \"" << args.error_log << "\"," << std::endl <<
@@ -183,6 +203,7 @@ int main(int argc, char** argv) {
         "Help: " << args.help << std::endl <<
         "CPU: " << args.cpu << std::endl <<
         "GPU: " << args.gpu << std::endl <<
+        "Submer: " << args.submer << std::endl <<
         "Format: ";
         switch(args.format) {
             case 0:
@@ -212,7 +233,8 @@ int main(int argc, char** argv) {
     if (args.format == 2) {
         args.log << "{\"versions\": {" << std::endl <<
                     "\t\"SensorTools\": \"" << SensorToolsVersion << "\"," << std::endl <<
-                    "\t\"LibSensors\": \"" << libsensors_version << "\"";
+                    "\t\"LibSensors\": \"" << libsensors_version << "\"," << std::endl <<
+                    "\t\"LibCurl\": \"" << curl_version() << "\"";
         #ifdef GPU_ENABLED
         int NVML_VERSION;
         char NVML_DRIVER_VERSION[NAME_BUFFER_SIZE];
@@ -228,6 +250,7 @@ int main(int argc, char** argv) {
     else if (args.debug >= DebugVerbose || args.version) {
         args.error_log << "SensorTools v" << SensorToolsVersion << std::endl;
         args.error_log << "Using libsensors v" << libsensors_version << std::endl;
+        args.error_log << "LibCurl v" << curl_version() << std::endl;
         #ifdef GPU_ENABLED
         int NVML_VERSION;
         char NVML_DRIVER_VERSION[NAME_BUFFER_SIZE];
@@ -242,6 +265,7 @@ int main(int argc, char** argv) {
     // Hardware Detection / caching for faster updates
     cache_cpus();
     cache_gpus();
+    cache_submers();
 
     // Prepare output
     print_header();
