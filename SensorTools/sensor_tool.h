@@ -4,6 +4,7 @@
 #include "cpu_tools.h" // Defined API and variables for monitoring CPUs
 #include "gpu_tools.h" // Defined API and variables for monitoring GPUs
 #include "submer_tools.h" // Defined API and variables for monitoring Submer Pods
+#include "nvme_tools.h" // Defined API and variales for monitoring NVMe devices
 
 #include <iostream> // cout, cerr, etc
 #include <iomanip> // setw and setprecision
