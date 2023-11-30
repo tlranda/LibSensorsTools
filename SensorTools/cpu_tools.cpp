@@ -67,7 +67,7 @@ void cache_cpus(void) {
     const std::string prefix = "/sys/devices/system/cpu/cpu",
                       suffix = "/cpufreq/scaling_cur_freq";
     int n_cpu = 0;
-    char buf[NAME_BUFFER_SIZE];
+    char buf[NAME_BUFFER_SIZE] = {0};
     // Collect until we cannot find a CPU core id to match
     while (1) {
         std::filesystem::path fpath(prefix + std::to_string(n_cpu) + suffix);
@@ -138,7 +138,7 @@ int update_cpus(void) {
         }
     }
     // Frequency updates
-    char buf[NAME_BUFFER_SIZE];
+    char buf[NAME_BUFFER_SIZE] = {0};
     for (std::vector<freq_cache>::iterator i = known_freqs.begin(); i != known_freqs.end(); i++) {
         rewind(i->fhandle);
         int nbytes = fread(buf, sizeof(char), NAME_BUFFER_SIZE, i->fhandle);
