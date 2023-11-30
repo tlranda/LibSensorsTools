@@ -64,6 +64,7 @@ typedef struct argstruct {
          cpu = 0,
          gpu = 0,
          submer = 0,
+         nvme = 0,
          version = 0,
          shutdown = 0;
     short format = 0, debug = 0;

@@ -23,12 +23,8 @@ typedef struct submer_cache_t {
     submer_cache_t() {}
     // Destructor
     ~submer_cache_t() {
-        if (curl_handle) {
-            curl_easy_cleanup(curl_handle);
-        }
-        if (response) {
-            free(response);
-        }
+        if (curl_handle) curl_easy_cleanup(curl_handle);
+        if (response) free(response);
     }
 } submer_cache;
 // End Class and Type declarations

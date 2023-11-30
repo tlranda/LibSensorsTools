@@ -17,6 +17,10 @@ void set_initial_temperatures(void) {
             submer_cache* j = i->get();
             j->initialSubmerTemperature = j->json_data["temperature"];
         }
+    if (args.nvme)
+        for (std::vector<nvme_cache>::iterator i = known_nvme.begin(); i != known_nvme.end(); i++)
+            for (int j = 0; j < i->temperature.size(); j++)
+                i->initial_temperature[j] = i->temperature[j];
 }
 
 // Prints the CSV header columns and immediate cached values from first read
@@ -62,6 +66,11 @@ void print_header(void) {
             args.log << ",submer_" << j->index, "_temperature";
         }
     }
+    if (args.nvme) {
+        for (std::vector<nvme_cache>::iterator i = known_nvme.begin(); i != known_nvme.end(); i++) {
+            args.log << ",nvme_" << i->index << "_temperature";
+        }
+    }
     args.log << std::endl;
 }
 
@@ -99,6 +108,12 @@ int poll_cycle(std::chrono::time_point<std::chrono::system_clock> t0) {
         if (args.debug >= DebugVerbose) args.error_log << "Pods have " << update << " / " << submers_to_satisfy << " satisfied temperatures" << std::endl;
         at_or_below_initial_temperature += update;
         //at_or_below_initial_temperature += update_submers();
+    }
+    if (args.nvme) {
+        int update = update_nvme();
+        if (args.debug >= DebugVerbose) args.error_log << "NVMe has " << update << " / " << nvme_to_satisfy << " satisfied temperatures" << std::endl;
+        at_or_below_initial_temperature += update;
+        //at_or_below_initial_temperature += update_nvme();
     }
     switch (args.format) {
         case 0:
@@ -180,6 +195,7 @@ int main(int argc, char** argv) {
                     "\t\"cpu\": " << args.cpu << "," << std::endl <<
                     "\t\"gpu\": " << args.gpu << "," << std::endl <<
                     "\t\"submer\": " << args.submer << "," << std::endl <<
+                    "\t\"nvme\": " << args.nvme << "," << std::endl <<
                     "\t\"format\": \"json\"," << std::endl <<
                     "\t\"log\": \"" << args.log << "\"," << std::endl <<
                     "\t\"error-log\": \"" << args.error_log << "\"," << std::endl <<
@@ -204,6 +220,7 @@ int main(int argc, char** argv) {
         "CPU: " << args.cpu << std::endl <<
         "GPU: " << args.gpu << std::endl <<
         "Submer: " << args.submer << std::endl <<
+        "NVMe: " << args.nvme << std::endl <<
         "Format: ";
         switch(args.format) {
             case 0:
@@ -245,6 +262,7 @@ int main(int argc, char** argv) {
         #else
         args.log << std::endl;
         #endif
+        args.log << "\t\"LibNVMe\": \"" << nvme_get_version(NVME_VERSION_PROJECT) << "\"," << std::endl;
         args.log << "\t}" << std::endl << "}," << std::endl;
     }
     else if (args.debug >= DebugVerbose || args.version) {
@@ -259,6 +277,7 @@ int main(int argc, char** argv) {
         args.error_log << "Using NVML v" << NVML_VERSION << std::endl <<
                           "Using NVML Driver v" << NVML_DRIVER_VERSION << std::endl;
         #endif
+        args.log << "LibNVMe: " << nvme_get_version(NVME_VERSION_PROJECT) << std::endl;
         if (args.version) exit(EXIT_SUCCESS);
     }
 
@@ -266,6 +285,7 @@ int main(int argc, char** argv) {
     cache_cpus();
     cache_gpus();
     cache_submers();
+    cache_nvme();
 
     // Prepare output
     print_header();

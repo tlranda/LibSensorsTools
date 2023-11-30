@@ -80,6 +80,7 @@ void parse(int argc, char** argv) {
         {"cpu", no_argument, 0, 'c'},
         {"gpu", no_argument, 0, 'g'},
         {"submer", no_argument, 0, 's'},
+        {"nvme", no_argument, 0, 'n'},
         {"format", required_argument, 0, 'f'},
         {"log", required_argument, 0, 'l'},
         {"errorlog", required_argument, 0, 'L'},
@@ -90,7 +91,7 @@ void parse(int argc, char** argv) {
         {"version", no_argument, 0, 'v'},
         {0,0,0,0}
     };
-    const char* optionstr = "hcgsf:l:L:p:i:w:d:v";
+    const char* optionstr = "hcgsnf:l:L:p:i:w:d:v";
     // Disable getopt's automatic error message -- we'll catch it via the '?' return and shut down
     opterr = 0;
 
@@ -117,6 +118,8 @@ void parse(int argc, char** argv) {
                              "Query GPU stats only (default: GPU and CPU)" << std::endl;
                 std::cout << "\t-s | --submer\n\t\t" <<
                              "Query Submer Pod stats (default: Not queried)" << std::endl;
+                std::cout << "\t-n | --nvme\n\t\t" <<
+                             "Query NVMe device temperatures (default: Not queried)" << std::endl;
                 std::cout << "\t-f [level] | --format [level]\n\t\t" <<
                              "Output format [0 = CSV == default | 1 = human-readable | 2 = JSON]" << std::endl;
                 std::cout << "\t-l [file] | --log [file]\n\t\t" <<
@@ -145,6 +148,9 @@ void parse(int argc, char** argv) {
                 break;
             case 's':
                 args.submer = true;
+                break;
+            case 'n':
+                args.nvme = true;
                 break;
             case 'f':
                 args.format = atoi(optarg);
@@ -199,7 +205,7 @@ void parse(int argc, char** argv) {
         }
     }
     // Post-reading logic
-    if (!args.cpu && !args.gpu && !args.submer) { // Default: Handle both CPU and GPU
+    if (!args.cpu && !args.gpu && !args.submer && !args.nvme) { // Default: Handle both CPU and GPU
         args.cpu = true;
         args.gpu = true;
     }
