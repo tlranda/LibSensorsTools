@@ -12,19 +12,12 @@
 typedef struct nvme_cache_t {
     // IDs
     int index;
-    //std::vector<nvme_ctrl_t> ctrls;
     struct nvme_smart_log temp_log;
     std::vector<struct nvme_smart_log> smarts;
     std::vector<int> fds;
     // Cached data
     std::vector<int> temperature;
     std::vector<int> initial_temperature;
-    // Constructor
-    nvme_cache_t() {}
-    // Destructor
-    ~nvme_cache_t() {
-        //if (r) nvme_free_tree(r);
-    }
 } nvme_cache;
 
 

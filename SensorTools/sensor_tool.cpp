@@ -67,9 +67,9 @@ void print_header(void) {
         }
     }
     if (args.nvme) {
-        for (std::vector<nvme_cache>::iterator i = known_nvme.begin(); i != known_nvme.end(); i++) {
-            args.log << ",nvme_" << i->index << "_temperature";
-        }
+        for (std::vector<nvme_cache>::iterator i = known_nvme.begin(); i != known_nvme.end(); i++)
+            for (int j = 0; j < i->temperature.size(); j++)
+                args.log << ",nvme_" << i->index << "_" << j << "_temperature";
     }
     args.log << std::endl;
 }
