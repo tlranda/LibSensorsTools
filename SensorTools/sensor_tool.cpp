@@ -258,11 +258,9 @@ int main(int argc, char** argv) {
         nvmlSystemGetCudaDriverVersion(&NVML_VERSION);
         nvmlSystemGetDriverVersion(NVML_DRIVER_VERSION, NAME_BUFFER_SIZE);
         args.log << "," << std::endl << "\t\"NVML\": \"" << NVML_VERSION << "\"," << std::endl <<
-                    "\t\"NVIDIA Driver\": \"" << NVML_DRIVER_VERSION << "\"" << std::endl;
-        #else
-        args.log << std::endl;
+                    "\t\"NVIDIA Driver\": \"" << NVML_DRIVER_VERSION << "\"," << std::endl;
         #endif
-        args.log << "\t\"LibNVMe\": \"" << nvme_get_version(NVME_VERSION_PROJECT) << "\"," << std::endl;
+        args.log << "\t\"LibNVMe\": \"" << nvme_get_version(NVME_VERSION_PROJECT) << "\"" << std::endl;
         args.log << "\t}" << std::endl << "}," << std::endl;
     }
     else if (args.debug >= DebugVerbose || args.version) {
