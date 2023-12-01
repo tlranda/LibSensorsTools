@@ -70,7 +70,7 @@ int update_nvme(void) {
                         args.log << "NVMe " << i->index << "_" << k << " Temperature: " << i->temperature[k] << std::endl;
                         break;
                     case 2:
-                        args.log << "\t\"nvme-" << i->index << "-" << k << "-temperature\": " << i->temperature[k] << ",";
+                        args.log << "\t\"nvme-" << i->index << "-" << k << "-temperature\": " << i->temperature[k] << "," << std::endl;
                         break;
                 }
             }

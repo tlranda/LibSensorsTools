@@ -93,7 +93,7 @@ int update_submers(void) {
                     args.log << "Submer Temperature: " << j->json_data["temperature"] << std::endl;
                     break;
                 case 2:
-                    args.log << "\t\"submer-" << j->index << "-temperature\": " << j->json_data["temperature"] << ",";
+                    args.log << "\t\"submer-" << j->index << "-temperature\": " << j->json_data["temperature"] << "," << std::endl;
                     break;
             }
         }
