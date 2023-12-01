@@ -68,7 +68,7 @@ def get_temps_and_traces(args):
                     if len(traces) > 0 and args.min_trace_diff is not None and\
                        record['timestamp'] - traces[-1].timestamp < args.min_trace_diff:
                        continue
-                    traces.append(traceData(record['timestamp'], record['event']))
+                    traces.append(traceData(record['timestamp'], f"{record['event']} ({int(record['timestamp'])})"))
             # Post all tracked data
             for (k,v) in jtemps.items():
                 temps.append(temperatureData(v, jtimes, k))
@@ -84,7 +84,7 @@ def get_temps_and_traces(args):
 def main(args=None):
     args = parse(args)
     temperature_data, traces = get_temps_and_traces(args)
-    fig, ax = plt.subplots()
+    fig, ax = plt.subplots(figsize=(12,6))
     ymin, ymax = np.inf, -np.inf
     for temps in temperature_data:
         if args.min_temp_enforce is not None and np.max(temps.data) < args.min_temp_enforce:
