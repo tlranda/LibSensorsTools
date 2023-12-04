@@ -50,8 +50,11 @@ public:
 private:
     std::mutex fileMutex;
     std::ofstream fileStream;
-    bool defaultToCout;
+    FILE * fileDescriptor;
+    bool defaultToCout, detectedAsSudo;
     char fname[NAME_BUFFER_SIZE];
+    uid_t sudo_uid;
+    gid_t sudo_gid;
 
     bool openFile(const char *fname_);
     void closeFile(void);
