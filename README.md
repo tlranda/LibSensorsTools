@@ -16,13 +16,29 @@ These properties include:
 * Power usage, state and limit
 * Compute and Memory Utilization
 
+## Submer Sensing
+A submer liquid imemrsion cooling pod provides a web-api to read thermal sensor values.
+The particular API link should be similar to "http://your_domain/api/realTime", and should be specified in [SensorTools/submer_api.h](SensorTools/submer_api.h).
+
+## NVMe Sensing
+NVMe devices can also include thermal sensors, read through [libnvme](https://github.com/linux-nvme/libnvme/tree/93aecc45b3453406e9b80e45012ae37a2ad1c5e4).
+This dependency is added as a submodule as not all package managers provide direct support.
+
 ## Dependencies
 
 For CPU sensing, lm-sensors and its development tools must be installed.
 See their repository linked above for instructions.
+The CMake build variable is `-DBUILD_CPU=ON`, which is on by default.
 
 For GPU sensing, a CUDA runtime should provide NVML access.
 The build tools will not link against GPU code if the runtime cannot be found.
+The CMake build variable is `-DBUILD_GPU=ON`, which is OFF by default.
+
+For Submer sensing, the webapi linked in the submer_api.h document must be accessible by your machine.
+The CMake build variable is `-DBUILD_POD=ON`, which is OFF by default.
+
+For NVMe sensing, libnvme must be installed through the provided submodule.
+The CMake build variable is `-DBUILD_NVME=ON`, which is OFF by default.
 
 ## Build
 
@@ -30,22 +46,21 @@ After installing dependencies, you should be able to compile the program using t
 
 ```
 $ cd SensorTools;
+$ mkdir build;
+$ cd build;
+$ cmake <-DBUILD_*=ON for each tool you want> ..;
 $ make;
 ```
 
-The executable target will be `${HOSTNAME}_senors`.
+The executable target will be `${HOSTNAME}_sensors`.
 
 ## Usage
 
 For an initial demo, run the program with no arguments: `$ ./${HOSTNAME}_sensors;`
-This will output a CSV header with all detected sensors in order:
-* Timestamp
-* All CPU thermal sensors
-* All CPU core frequencies
-* All GPU sensors # if GPUs detected at compilation time
+This will output a CSV header with a timestamp and all detected sensors in order.
 
-If more than one GPU is detected at runtime, each GPUs sensors are output as a contiguous block in order.
-In the current version, `CUDA_VISIBLE_DEVICES` does NOT limit which devices are monitored.
+If more than one of a particular sensor are detected at runtime, all observations for each class of sensors are output as a contiguous block in order.
+NOTE: In the current version, `CUDA_VISIBLE_DEVICES` does NOT limit which GPU devices are monitored.
 
 For full options to customize program behaviors, you can use the `-h | --help` argument, ie: `$ ./${HOSTNAME}_sensors -h;` or `$ ./${HOSTNAME}_sensors --help`;
 
@@ -96,7 +111,6 @@ If you've found a bug or discovered missing opportunities in the tool, please [o
 
 Contributions are welcome, particularly:
 * AMD GPU support
-* Transition from Make --> CMake
 * Useful benchmarks to represent realistic/interesting workloads
 
 Contributions are only accepted via pull requests.
