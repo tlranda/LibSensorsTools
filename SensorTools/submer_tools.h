@@ -2,8 +2,6 @@
 // Document necessary compiler flags as needed in full-line comment below the header
 #include <curl/curl.h> // curl library
 // Must compile with: -lcurl
-#include <nlohmann/json.hpp> // JSON parsing
-// Requires submodule pull to fetch dependency
 #include "submer_api.h"
 // Defines symbol SUBMER_URL as the http API URL for the monitor's JSON
 #include "control.h" // Debug levels, arguments, Output class

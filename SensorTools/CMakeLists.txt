@@ -4,7 +4,7 @@ project(LibSensorTools
     VERSION 0.1.0
     DESCRIPTION "Composite library of sensing tools"
     HOMEPAGE_URL "https://github.com/tlranda/LibSensorsTools"
-    LANGUAGES "CXX" "CUDA")
+    LANGUAGES CXX CUDA)
 
 # Some basic settings
 set(CMAKE_CXX_STANDARD 17)
@@ -53,6 +53,7 @@ if (BUILD_NVME)
     target_link_libraries(libsensors PUBLIC nvme)
     target_sources(libsensors PUBLIC ${nvme_sources})
 endif(BUILD_NVME)
+configure_file(control.h.in ../control.h)
 
 # Installation
 install(TARGETS libsensors)

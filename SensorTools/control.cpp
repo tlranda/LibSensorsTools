@@ -93,10 +93,18 @@ void parse(int argc, char** argv) {
     // Getopt option declarations
     static struct option long_options[] = {
         {"help", no_argument, 0, 'h'},
+        #ifdef BUILD_CPU
         {"cpu", no_argument, 0, 'c'},
+        #endif
+        #ifdef BUILD_GPU
         {"gpu", no_argument, 0, 'g'},
+        #endif
+        #ifdef BUILD_POD
         {"submer", no_argument, 0, 's'},
+        #endif
+        #ifdef BUILD_NVME
         {"nvme", no_argument, 0, 'n'},
+        #endif
         {"format", required_argument, 0, 'f'},
         {"log", required_argument, 0, 'l'},
         {"errorlog", required_argument, 0, 'L'},
@@ -107,7 +115,20 @@ void parse(int argc, char** argv) {
         {"version", no_argument, 0, 'v'},
         {0,0,0,0}
     };
-    const char* optionstr = "hcgsnf:l:L:p:i:w:d:v";
+    const char* optionstr = "h"
+    #ifdef BUILD_CPU
+    "c"
+    #endif
+    #ifdef BUILD_GPU
+    "g"
+    #endif
+    #ifdef BUILD_POD
+    "s"
+    #endif
+    #ifdef BUILD_NVME
+    "n"
+    #endif
+    "hf:l:L:p:i:w:d:v";
     // Disable getopt's automatic error message -- we'll catch it via the '?' return and shut down
     opterr = 0;
 
@@ -128,14 +149,22 @@ void parse(int argc, char** argv) {
                 std::cout << "Usage: " << PROGNAME << " [options]" << std::endl;
                 std::cout << "\t-h | --help\n\t\t" <<
                              "Print this help message and exit" << std::endl;
+                #ifdef BUILD_CPU
                 std::cout << "\t-c | --cpu\n\t\t" <<
                              "Query CPU stats only (default: CPU and GPU)" << std::endl;
+                #endif
+                #ifdef BUILD_GPU
                 std::cout << "\t-g | --gpu\n\t\t" <<
                              "Query GPU stats only (default: GPU and CPU)" << std::endl;
+                #endif
+                #ifdef BUILD_POD
                 std::cout << "\t-s | --submer\n\t\t" <<
                              "Query Submer Pod stats (default: Not queried)" << std::endl;
+                #endif
+                #ifdef BULID_NVME
                 std::cout << "\t-n | --nvme\n\t\t" <<
                              "Query NVMe device temperatures (default: Not queried)" << std::endl;
+                #endif
                 std::cout << "\t-f [level] | --format [level]\n\t\t" <<
                              "Output format [0 = CSV == default | 1 = human-readable | 2 = JSON]" << std::endl;
                 std::cout << "\t-l [file] | --log [file]\n\t\t" <<
@@ -156,18 +185,26 @@ void parse(int argc, char** argv) {
                 std::cout << std::endl << "To automatically wrap another command with sensing for its duration, specify that command after the '--' argument" <<
                              std::endl << "ie: " << PROGNAME << " -- sleep 3" << std::endl;
                 exit(EXIT_SUCCESS);
+            #ifdef BUILD_CPU
             case 'c':
                 args.cpu = true;
                 break;
+            #endif
+            #ifdef BUILD_GPU
             case 'g':
                 args.gpu = true;
                 break;
+            #endif
+            #ifdef BUILD_POD
             case 's':
                 args.submer = true;
                 break;
+            #endif
+            #ifdef BUILD_NVME
             case 'n':
                 args.nvme = true;
                 break;
+            #endif
             case 'f':
                 args.format = atoi(optarg);
                 break;
@@ -221,10 +258,7 @@ void parse(int argc, char** argv) {
         }
     }
     // Post-reading logic
-    if (!args.cpu && !args.gpu && !args.submer && !args.nvme) { // Default: Handle both CPU and GPU
-        args.cpu = true;
-        args.gpu = true;
-    }
+    if (!args.any_active()) args.default_active(); // Ensure defaults always on
     if (optind < argc) {
         args.wrapped = const_cast<char**>(&argv[optind]);
         if (args.debug >= DebugMinimal) {

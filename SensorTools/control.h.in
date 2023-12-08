@@ -15,10 +15,16 @@
 #include <mutex> // Currently single-threaded, but permit thread safety for IO
 #include <string> // String class and manipulation
 #include <cstring> // strncopy(), memset()
+#include <nlohmann/json.hpp> // JSON parsing
+// Requires submodule pull to fetch dependency
 
 // LibSensors and NVML demos typically allocate this much space for chip/driver names
 #define NAME_BUFFER_SIZE 200
 #define SensorToolsVersion "0.1.0"
+#cmakedefine BUILD_CPU
+#cmakedefine BUILD_GPU
+#cmakedefine BUILD_POD
+#cmakedefine BUILD_NVME
 // End Headers
 
 
@@ -64,10 +70,18 @@ private:
 // Argument values stored here
 typedef struct argstruct {
     bool help = 0,
+         #ifdef BUILD_CPU
          cpu = 0,
+         #endif
+         #ifdef BUILD_GPU
          gpu = 0,
+         #endif
+         #ifdef BUILD_POD
          submer = 0,
+         #endif
+         #ifdef BUILD_NVME
          nvme = 0,
+         #endif
          version = 0,
          shutdown = 0;
     short format = 0, debug = 0;
@@ -76,6 +90,41 @@ typedef struct argstruct {
     double poll = 0., initial_wait = 0., post_wait = 0.;
     std::chrono::duration<double> poll_duration, initial_duration, post_duration;
     char** wrapped;
+    bool any_active(void) {
+        bool ret = 0;
+        #ifdef BUILD_CPU
+        ret = ret | cpu;
+        #endif
+        #ifdef BUILD_GPU
+        ret = ret | gpu;
+        #endif
+        #ifdef BUILD_POD
+        ret = ret | submer;
+        #endif
+        #ifdef BULID_NVME
+        ret = ret | nvme;
+        #endif
+        return ret;
+    }
+    void default_active(void) {
+        #ifdef BUILD_CPU
+        cpu = 1;
+        #endif
+        #ifdef BUILD_GPU
+        gpu = 1;
+        #endif
+        // Other tools only default when not built with CPU and not built with GPU
+        #ifndef BUILD_CPU
+        #ifndef BUILD_GPU
+            #ifdef BUILD_POD
+            submer = 1;
+            #endif
+            #ifdef BUILD_NVME
+            nvme = 1;
+            #endif
+        #endif
+        #endif
+    }
 } arguments;
 // End Class and Type declarations
 

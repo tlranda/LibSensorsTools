@@ -1,10 +1,18 @@
 // Headers and why they're included
 // Document necessary compiler flags beside each header as needed in full-line comment below the header
 #include "control.h" // Debug levels, arguments, Output class
-#include "cpu_tools.h" // Defined API and variables for monitoring CPUs
-#include "gpu_tools.h" // Defined API and variables for monitoring GPUs
-#include "submer_tools.h" // Defined API and variables for monitoring Submer Pods
-#include "nvme_tools.h" // Defined API and variales for monitoring NVMe devices
+#ifdef BUILD_CPU
+#include "cpu_tools.h"
+#endif
+#ifdef BUILD_GPU
+#include "gpu_tools.h"
+#endif
+#ifdef BUILD_POD
+#include "submer_tools.h"
+#endif
+#ifdef BUILD_NVME
+#include "nvme_tools.h"
+#endif
 
 #include <iostream> // cout, cerr, etc
 #include <iomanip> // setw and setprecision

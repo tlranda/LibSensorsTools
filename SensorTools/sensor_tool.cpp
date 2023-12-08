@@ -5,22 +5,30 @@ std::chrono::time_point<std::chrono::system_clock> t_minus_one;
 
 // Changes initial temperature threshold values to most recently updated value (does not create an update itself)
 void set_initial_temperatures(void) {
+    #ifdef BUILD_CPU
     if (args.cpu)
         for (std::vector<cpu_cache>::iterator i = known_cpus.begin(); i != known_cpus.end(); i++)
             for (int j = 0; j < i->temperature.size(); j++)
                 i->initial_temperature[j] = i->temperature[j];
+    #endif
+    #ifdef BUILD_GPU
     if (args.gpu)
         for (std::vector<gpu_cache>::iterator i = known_gpus.begin(); i != known_gpus.end(); i++)
             i->gpu_initialTemperature = i->gpu_temperature;
+    #endif
+    #ifdef BUILD_POD
     if (args.submer)
         for (std::vector<std::unique_ptr<submer_cache>>::iterator i = known_submers.begin(); i != known_submers.end(); i++) {
             submer_cache* j = i->get();
             j->initialSubmerTemperature = j->json_data["temperature"];
         }
+    #endif
+    #ifdef BUILD_NVME
     if (args.nvme)
         for (std::vector<nvme_cache>::iterator i = known_nvme.begin(); i != known_nvme.end(); i++)
             for (int j = 0; j < i->temperature.size(); j++)
                 i->initial_temperature[j] = i->temperature[j];
+    #endif
 }
 
 // Prints the CSV header columns and immediate cached values from first read
@@ -42,6 +50,7 @@ void print_header(void) {
 
     // Set headers
     args.log << "timestamp";
+    #ifdef BUILD_CPU
     if (args.cpu) {
         // Temperature
         for (std::vector<cpu_cache>::iterator i = known_cpus.begin(); i != known_cpus.end(); i++)
@@ -51,6 +60,8 @@ void print_header(void) {
         for (std::vector<freq_cache>::iterator i = known_freqs.begin(); i != known_freqs.end(); i++)
             args.log << ",core_" << i->coreid << "_freq";
     }
+    #endif
+    #ifdef BUILD_GPU
     if (args.gpu) {
         for (std::vector<gpu_cache>::iterator i = known_gpus.begin(); i != known_gpus.end(); i++) {
             args.log << ",gpu_" << i->device_ID << "_name,gpu_" << i->device_ID << "_gpu_temperature,gpu_" <<
@@ -60,17 +71,22 @@ void print_header(void) {
                      i->device_ID << "_memory_total,gpu_" << i->device_ID << "_pstate";
         }
     }
+    #endif
+    #ifdef BUILD_POD
     if (args.submer) {
         for (std::vector<std::unique_ptr<submer_cache>>::iterator i = known_submers.begin(); i != known_submers.end(); i++) {
             submer_cache* j = i->get();
             args.log << ",submer_" << j->index, "_temperature";
         }
     }
+    #endif
+    #ifdef BUILD_NVME
     if (args.nvme) {
         for (std::vector<nvme_cache>::iterator i = known_nvme.begin(); i != known_nvme.end(); i++)
             for (int j = 0; j < i->temperature.size(); j++)
                 args.log << ",nvme_" << i->index << "_" << j << "_temperature";
     }
+    #endif
     args.log << std::endl;
 }
 
@@ -91,30 +107,38 @@ int poll_cycle(std::chrono::time_point<std::chrono::system_clock> t0) {
     }
 
     // Collection
+    #ifdef BUILD_CPU
     if (args.cpu) {
         int update = update_cpus();
         if (args.debug >= DebugVerbose) args.error_log << "CPUs have " << update << " / " << cpus_to_satisfy << " satisfied temperatures" << std::endl;
         at_or_below_initial_temperature += update;
         //at_or_below_initial_temperature += update_cpus();
     }
+    #endif
+    #ifdef BUILD_GPU
     if (args.gpu) {
         int update = update_gpus();
         if (args.debug >= DebugVerbose) args.error_log << "GPUs have " << update << " / " << gpus_to_satisfy << " satisfied temperatures" << std::endl;
         at_or_below_initial_temperature += update;
         //at_or_below_initial_temperature += update_gpus();
     }
+    #endif
+    #ifdef BUILD_POD
     if (args.submer) {
         int update = update_submers();
         if (args.debug >= DebugVerbose) args.error_log << "Pods have " << update << " / " << submers_to_satisfy << " satisfied temperatures" << std::endl;
         at_or_below_initial_temperature += update;
         //at_or_below_initial_temperature += update_submers();
     }
+    #endif
+    #ifdef BUILD_NVME
     if (args.nvme) {
         int update = update_nvme();
         if (args.debug >= DebugVerbose) args.error_log << "NVMe has " << update << " / " << nvme_to_satisfy << " satisfied temperatures" << std::endl;
         at_or_below_initial_temperature += update;
         //at_or_below_initial_temperature += update_nvme();
     }
+    #endif
     switch (args.format) {
         case 0:
         case 1:
@@ -152,11 +176,17 @@ void shutdown(int s = 0) {
     else
         args.error_log << "@@Shutdown at " << std::chrono::duration_cast<std::chrono::nanoseconds>(t0-t_minus_one).count() / 1e9 << "s" << std::endl;
     if (args.debug >= DebugMinimal) args.error_log << "Run shutdown with signal " << s << std::endl;
+    #ifdef BUILD_CPU
+    sensors_cleanup();
+    #endif
+    #ifdef BUILD_GPU
     #ifdef GPU_ENABLED
     nvmlShutdown();
     #endif
+    #endif
+    #ifdef BUILD_POD
     curl_global_cleanup();
-    sensors_cleanup();
+    #endif
     if (args.debug >= DebugMinimal) args.error_log << "Shutdown clean. Exiting..." << std::endl;
     exit(EXIT_SUCCESS);
 }
@@ -165,15 +195,21 @@ void shutdown(int s = 0) {
 int main(int argc, char** argv) {
     t_minus_one = std::chrono::system_clock::now();
     // Library initializations
+    #ifdef BUILD_CPU
     auto const error = sensors_init(NULL);
     if(error != 0) {
         args.error_log << "LibSensors library did not initialize properly! Aborting..." << std::endl;
         exit(EXIT_FAILURE);
     }
+    #endif
+    #ifdef BUILD_GPU
     #ifdef GPU_ENABLED
     nvmlInit();
     #endif
+    #endif
+    #ifdef BUILD_POD
     curl_global_init(CURL_GLOBAL_ALL);
+    #endif
 
     // Prepare shutdown via CTRL+C or other signals
     struct sigaction sigHandler;
@@ -192,10 +228,18 @@ int main(int argc, char** argv) {
         args.log << "[" << std::endl;
         args.log << "{\"arguments\": { " << std::endl <<
                     "\t\"help\": " << args.help << "," << std::endl <<
+                    #ifdef BUILD_CPU
                     "\t\"cpu\": " << args.cpu << "," << std::endl <<
+                    #endif
+                    #ifdef BUILD_GPU
                     "\t\"gpu\": " << args.gpu << "," << std::endl <<
+                    #endif
+                    #ifdef BUILD_POD
                     "\t\"submer\": " << args.submer << "," << std::endl <<
+                    #endif
+                    #ifdef BUILD_NVME
                     "\t\"nvme\": " << args.nvme << "," << std::endl <<
+                    #endif
                     "\t\"format\": \"json\"," << std::endl <<
                     "\t\"log\": \"" << args.log << "\"," << std::endl <<
                     "\t\"error-log\": \"" << args.error_log << "\"," << std::endl <<
@@ -217,10 +261,18 @@ int main(int argc, char** argv) {
     else if (args.debug >= DebugMinimal) {
         args.error_log << "Arguments evaluate to" << std::endl <<
         "Help: " << args.help << std::endl <<
+        #ifdef BUILD_CPU
         "CPU: " << args.cpu << std::endl <<
+        #endif
+        #ifdef BUILD_GPU
         "GPU: " << args.gpu << std::endl <<
+        #endif
+        #ifdef BUILD_POD
         "Submer: " << args.submer << std::endl <<
+        #endif
+        #ifdef BUILD_NVME
         "NVMe: " << args.nvme << std::endl <<
+        #endif
         "Format: ";
         switch(args.format) {
             case 0:
@@ -249,24 +301,37 @@ int main(int argc, char** argv) {
     // Denote library versions
     if (args.format == 2) {
         args.log << "{\"versions\": {" << std::endl <<
-                    "\t\"SensorTools\": \"" << SensorToolsVersion << "\"," << std::endl <<
-                    "\t\"LibSensors\": \"" << libsensors_version << "\"," << std::endl <<
-                    "\t\"LibCurl\": \"" << curl_version() << "\"";
+                    "\t\"SensorTools\": \"" << SensorToolsVersion << "\"," << std::endl;
+        #ifdef BUILD_CPU
+        args.log << "\t\"LibSensors\": \"" << libsensors_version << "\"," << std::endl;
+        #endif
+        #ifdef BUILD_GPU
         #ifdef GPU_ENABLED
         int NVML_VERSION;
         char NVML_DRIVER_VERSION[NAME_BUFFER_SIZE];
         nvmlSystemGetCudaDriverVersion(&NVML_VERSION);
         nvmlSystemGetDriverVersion(NVML_DRIVER_VERSION, NAME_BUFFER_SIZE);
-        args.log << "," << std::endl << "\t\"NVML\": \"" << NVML_VERSION << "\"," << std::endl <<
+        args.log << "\t\"NVML\": \"" << NVML_VERSION << "\"," << std::endl <<
                     "\t\"NVIDIA Driver\": \"" << NVML_DRIVER_VERSION << "\"," << std::endl;
         #endif
-        args.log << "\t\"LibNVMe\": \"" << nvme_get_version(NVME_VERSION_PROJECT) << "\"" << std::endl;
-        args.log << "\t}" << std::endl << "}," << std::endl;
+        #endif
+        #ifdef BUILD_POD
+        args.log << "\t\"LibCurl\": \"" << curl_version() << "\"," << std::endl;
+        #endif
+        #ifdef BUILD_NVME
+        args.log << "\t\"LibNVMe\": \"" << nvme_get_version(NVME_VERSION_PROJECT) << "\"," << std::endl;
+        #endif
+        args.log << "\t\"Nlohmann_Json\": \"" <<
+                        NLOHMANN_JSON_VERSION_MAJOR << "." <<
+                        NLOHMANN_JSON_VERSION_MINOR << "." <<
+                        NLOHMANN_JSON_VERSION_PATCH << "\"\t}" << std::endl << "}," << std::endl;
     }
     else if (args.debug >= DebugVerbose || args.version) {
         args.error_log << "SensorTools v" << SensorToolsVersion << std::endl;
+        #ifdef BUILD_CPU
         args.error_log << "Using libsensors v" << libsensors_version << std::endl;
-        args.error_log << "LibCurl v" << curl_version() << std::endl;
+        #endif
+        #ifdef BUILD_GPU
         #ifdef GPU_ENABLED
         int NVML_VERSION;
         char NVML_DRIVER_VERSION[NAME_BUFFER_SIZE];
@@ -275,15 +340,33 @@ int main(int argc, char** argv) {
         args.error_log << "Using NVML v" << NVML_VERSION << std::endl <<
                           "Using NVML Driver v" << NVML_DRIVER_VERSION << std::endl;
         #endif
+        #endif
+        #ifdef BUILD_POD
+        args.error_log << "LibCurl v" << curl_version() << std::endl;
+        #endif
+        #ifdef BUILD_NVME
         args.log << "LibNVMe: " << nvme_get_version(NVME_VERSION_PROJECT) << std::endl;
+        #endif
+        args.log << "Nlohmann_Json: " <<
+                    NLOHMANN_JSON_VERSION_MAJOR << "." <<
+                    NLOHMANN_JSON_VERSION_MINOR << "." <<
+                    NLOHMANN_JSON_VERSION_PATCH << std::endl;
         if (args.version) exit(EXIT_SUCCESS);
     }
 
     // Hardware Detection / caching for faster updates
+    #ifdef BUILD_CPU
     cache_cpus();
+    #endif
+    #ifdef BUILD_GPU
     cache_gpus();
+    #endif
+    #ifdef BUILD_POD
     cache_submers();
+    #endif
+    #ifdef BUILD_NVME
     cache_nvme();
+    #endif
 
     // Prepare output
     print_header();
@@ -294,7 +377,19 @@ int main(int argc, char** argv) {
     else args.error_log << "@@Initialized at " << std::chrono::duration_cast<std::chrono::nanoseconds>(t0-t_minus_one).count() / 1e9 << "s" << std::endl;
 
     // Main Loop
-    int poll_result, n_to_satisfy = cpus_to_satisfy + gpus_to_satisfy;
+    int poll_result, n_to_satisfy = 0;
+    #ifdef BUILD_CPU
+    n_to_satisfy += cpus_to_satisfy;
+    #endif
+    #ifdef BUILD_GPU
+    n_to_satisfy += gpus_to_satisfy;
+    #endif
+    #ifdef BUILD_POD
+    n_to_satisfy += submers_to_satisfy;
+    #endif
+    #ifdef BUILD_NVME
+    n_to_satisfy += nvme_to_satisfy;
+    #endif
     if (args.wrapped == nullptr) {
         if (args.poll == 0) poll_cycle(t_minus_one); // Single event collection
         else while (1) poll_cycle(t_minus_one); // No wrapping, monitor until the process is signaled to terminate
