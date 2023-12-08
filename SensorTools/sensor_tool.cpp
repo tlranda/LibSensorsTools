@@ -315,7 +315,11 @@ int main(int argc, char** argv) {
         // After initial wait expires, change initial temperatures
         set_initial_temperatures();
         if (args.format == 2) {
-            args.log << "{\"event\": \"initial-wait-end\", \"timestamp\": " << std::chrono::duration_cast<std::chrono::nanoseconds>(t1-t_minus_one).count() / 1e9 << "}," << std::endl;
+            args.log << "{\"event\": \"initial-wait-end\", \"timestamp\": " << std::chrono::duration_cast<std::chrono::nanoseconds>(t1-t_minus_one).count() / 1e9 << ", \"wrapped-command\": \"";
+            int argidx = 0;
+            // NOTE: Not escaped for JSON format, so this value could break the file
+            while (args.wrapped[argidx] != nullptr) args.log << args.wrapped[argidx++] << " ";
+            args.log << "\"}," << std::endl;
         }
         else {
             args.error_log << "@@Initial wait concludes at " << std::chrono::duration_cast<std::chrono::nanoseconds>(t1-t_minus_one).count() / 1e9 << "s" << std::endl
