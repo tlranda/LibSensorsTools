@@ -1,10 +1,10 @@
-cmake_minimum_required(VERSION 3.25) # This may be overly-cautious, but is the tested version
+cmake_minimum_required(VERSION 3.20) # This may be overly-cautious, but is the tested version
 
 project(LibSensorTools
     VERSION 0.1.0
     DESCRIPTION "Composite library of sensing tools"
     HOMEPAGE_URL "https://github.com/tlranda/LibSensorsTools"
-    LANGUAGES CXX CUDA)
+    LANGUAGES CXX)
 
 # Some basic settings
 set(CMAKE_CXX_STANDARD 17)
