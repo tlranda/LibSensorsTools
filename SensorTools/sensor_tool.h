@@ -14,7 +14,6 @@
 #include "nvme_tools.h"
 #endif
 
-#include <iostream> // cout, cerr, etc
 #include <iomanip> // setw and setprecision
 #include <thread> // Often implies <chrono>
 #include <chrono> // Given explicitly in case of above comment being untrue

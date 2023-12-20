@@ -14,14 +14,21 @@ set(CMAKE_CXX_STANDARD_REQUIRED True)
 add_executable(libsensors)
 cmake_host_system_information(RESULT hostname QUERY HOSTNAME)
 set_target_properties(libsensors PROPERTIES OUTPUT_NAME "${hostname}_sensors")
+# Separate compilation target for the server
+add_executable(libsensors_server)
+set_target_properties(libsensors_server PROPERTIES OUTPUT_NAME "${hostname}_sensors_server")
 
 target_compile_options(libsensors PUBLIC -march=native -O3)
+target_compile_options(libsensors_sever PUBLIC -march=native -O3)
 # Should drop -O3 for -O0 -g3 if in debug mode
 target_sources(libsensors PUBLIC "sensor_tool.cpp" "control.cpp")
+target_sources(libsensors_server PUBLIC "server.cpp" "control.cpp")
 
 # Always add these
 target_link_libraries(libsensors PUBLIC m stdc++fs)
+target_link_libraries(libsensors_server PUBLIC m stdc++fs)
 target_include_directories(libsensors PUBLIC ../submodules/nlohmann_json/single_include)
+target_include_directories(libsensors_server PUBLIC ../submodules/nlohmann_json/single_include)
 
 
 # Options define which tools get built in
@@ -55,6 +62,13 @@ if (BUILD_NVME)
 endif(BUILD_NVME)
 configure_file(control.h.in ../control.h)
 
-# Installation
+# Installation of libsensors
 install(TARGETS libsensors)
+
+# Now re-configure for the server
+add_compile_definitions(SERVER_MAIN)
+configure_file(control.h.in ../control_server.h)
+remove_compile_definitions(SERVER_MAIN)
+# Installation of libsensors_server
+install(TARGETS libsensors_server)
 
