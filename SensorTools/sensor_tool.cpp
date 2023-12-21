@@ -240,7 +240,7 @@ int main(int argc, char** argv) {
                     #ifdef BUILD_NVME
                     "\t\"nvme\": " << args.nvme << "," << std::endl <<
                     #endif
-                    "\t\"ip-address\": \"" << (args.ip_addr == nullptr) ? "N/A" : args.ip_addr << "\"," << std::endl <<
+                    "\t\"ip-address\": \"" << ((args.ip_addr == nullptr) ? "N/A" : args.ip_addr) << "\"," << std::endl <<
                     "\t\"format\": \"json\"," << std::endl <<
                     "\t\"log\": \"" << args.log << "\"," << std::endl <<
                     "\t\"error-log\": \"" << args.error_log << "\"," << std::endl <<

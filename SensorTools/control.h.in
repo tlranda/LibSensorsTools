@@ -109,7 +109,7 @@ typedef struct argstruct {
             #ifdef BUILD_POD
             ret = ret | submer;
             #endif
-            #ifdef BULID_NVME
+            #ifdef BUILD_NVME
             ret = ret | nvme;
             #endif
         #endif

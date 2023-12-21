@@ -228,7 +228,7 @@ void parse(int argc, char** argv) {
                     break;
                 #endif
                 case 'I':
-                    args.ip_addr = const_cast<char*>(argv+optind);
+                    args.ip_addr = argv[optind];
                     break;
             #else
                 case 'C':
