@@ -392,7 +392,61 @@ int main(int argc, char** argv) {
     #ifdef BUILD_NVME
     n_to_satisfy += nvme_to_satisfy;
     #endif
-    if (args.wrapped == nullptr) {
+    if (args.ip_addr != nullptr) {
+        // We will connect to a server for coordination
+        int clientSocket, attempt = 0, maxAttempts = -1;
+        struct sockaddr_in serverAddr;
+        while (1) {
+            // Create client socket
+            if ((clientSocket = socket(AF_INET, SOCK_STREAM, 0)) == 0) {
+                args.error_log << "Socket creation failed";
+                exit(EXIT_FAILURE);
+            }
+            serverAddr.sin_family = AF_INET;
+            serverAddr.sin_addr.s_addr = inet_addr(args.ip_addr);
+            serverAddr.sin_port = htons(SensorToolsPort);
+            // Connect to server
+            if (connect(clientSocket, (struct sockaddr *)&serverAddr, sizeof(serverAddr)) < 0) {
+                args.error_log << "Server Connection attempt #" << attempt+1 << " failed" << std::endl;
+                // Final attempt failed
+                if (maxAttempts > 0 && attempt+1 == maxAttempts) {
+                    args.error_log << "Maximum server connection attempts exhausted. Exiting." << std::endl;
+                    exit(EXIT_FAILURE);
+                }
+                sleep(1);
+                //std::this_thread::sleep_for(1); // Wait before retrying
+            }
+            else {
+                args.error_log << "Server Connection SUCCESS on attempt #" << attempt+1 << std::endl;
+                break;
+            }
+            attempt++;
+        }
+        char serverMsgBuffer[NAME_BUFFER_SIZE] = {0};
+        // Receive server start message
+        args.error_log << "Wait for server ready message" << std::endl;
+        recv(clientSocket, serverMsgBuffer, NAME_BUFFER_SIZE, 0);
+        args.error_log << "Received server ready message. Begin polling" << std::endl;
+        while (1) {
+            poll_cycle(t_minus_one); // Monitor until server signals for termination
+            fd_set readfds;
+            FD_ZERO(&readfds);
+            FD_SET(clientSocket, &readfds);
+            int activity = pselect(clientSocket+1, &readfds, NULL, NULL, NULL, NULL);
+            if ((activity < 0) && (errno != EINTR)) {
+                args.error_log << "Selection error" << std::endl;
+            }
+            if (FD_ISSET(clientSocket, &readfds)) {
+                recv(clientSocket, serverMsgBuffer, NAME_BUFFER_SIZE, 0);
+                if (strcmp(serverMsgBuffer, "STOP") == 0) {
+                    break;
+                }
+            }
+        }
+        args.error_log << "Closing connection to server" << std::endl;
+        close(clientSocket);
+    }
+    else if (args.wrapped == nullptr) {
         if (args.poll == 0) poll_cycle(t_minus_one); // Single event collection
         else while (1) poll_cycle(t_minus_one); // No wrapping, monitor until the process is signaled to terminate
     }

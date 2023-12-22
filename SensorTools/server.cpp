@@ -237,13 +237,16 @@ int main(int argc, char** argv) {
             }
         }
     }
-    // All clients connected
-
 
     // Start timing
     std::chrono::time_point<std::chrono::system_clock> t0 = std::chrono::system_clock::now();
     if (args.format == 2) args.log << "{\"event\": \"initialization\", \"duration\": " << std::chrono::duration_cast<std::chrono::nanoseconds>(t0-t_minus_one).count() / 1e9 << "}," << std::endl;
     else args.error_log << "@@Initialized at " << std::chrono::duration_cast<std::chrono::nanoseconds>(t0-t_minus_one).count() / 1e9 << "s" << std::endl;
+
+    // All clients connected, notify them to start polling
+    if (args.debug >= DebugVerbose) args.error_log << "Server sends 'START' message to all clients" << std::endl;
+    char clientMsgBuffer[NAME_BUFFER_SIZE] = "START";
+    for (std::vector<int>::iterator it = client_sockets.begin(); it != client_sockets.end(); it++) send(*it, clientMsgBuffer, NAME_BUFFER_SIZE, 0);
 
     // Main Loop
     int poll_result, n_to_satisfy = 0;
@@ -328,6 +331,10 @@ int main(int argc, char** argv) {
             waiting = std::chrono::duration_cast<std::chrono::nanoseconds>(t1-t2).count() / 1e9;
             if (args.post_wait < 0) {
                 // TODO: Indicate to clients to check/send # satisfied
+                if (args.debug >= DebugVerbose) args.error_log << "Server sends 'POLL' message to all clients" << std::endl;
+                strncpy(clientMsgBuffer, "POLL", 4);
+                clientMsgBuffer[4] = '\0';
+                for (std::vector<int>::iterator it = client_sockets.begin(); it != client_sockets.end(); it++) send(*it, clientMsgBuffer, NAME_BUFFER_SIZE, 0);
                 // Maximal wait enforced here
                 while (waiting < -args.post_wait) {
                     if (args.debug >= DebugVerbose)
@@ -368,6 +375,13 @@ int main(int argc, char** argv) {
             }
         }
     }
+    // Shut down all clients
+    if (args.debug >= DebugVerbose) args.error_log << "Server sends 'STOP' message to all clients" << std::endl;
+    strncpy(clientMsgBuffer, "STOP", 4);
+    clientMsgBuffer[4] = '\0';
+    for (std::vector<int>::iterator it = client_sockets.begin(); it != client_sockets.end(); it++) send(*it, clientMsgBuffer, NAME_BUFFER_SIZE, 0);
+    // Give clients a chance to disconnect
+    sleep(1);
 
     if (args.debug >= DebugVerbose)
         args.error_log << "The program ends" << std::endl;

@@ -22,3 +22,7 @@
 #include <sys/types.h> // pid_t
 #include <sys/wait.h> // fork()
 
+#include <arpa/inet.h> // Make network strings (IP addr, etc) for debug/logging
+#include <sys/socket.h> // Socket datatypes and operations
+// End Headers
+
