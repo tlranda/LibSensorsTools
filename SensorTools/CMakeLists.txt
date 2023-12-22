@@ -12,11 +12,11 @@ set(CMAKE_CXX_STANDARD_REQUIRED True)
 
 # Sources for each exectuable
 # Server::
-set(SERVER_SOURCES server.cpp control.cpp)
+set(SERVER_SOURCES server.cpp control_server.cpp)
 set(SERVER_LIBRARIES)
 # ::Server
 # Libsensors::
-set(LIBSENSORS_SOURCES sensor_tool.cpp control.cpp)
+set(LIBSENSORS_SOURCES sensor_tool.cpp control_sensors.cpp)
 set(LIBSENSORS_LIBRARIES)
 # Options define which tools get built into libsensors
 option(BUILD_CPU "Build the lm-sensors tool" ON)
@@ -71,10 +71,12 @@ set_target_properties(libsensors_server PROPERTIES OUTPUT_NAME "${hostname}_sens
 
 # Special header configurations
 configure_file(control.h.in control.h)
+configure_file(control.cpp.in control_sensors.cpp)
 target_include_directories(libsensors PRIVATE "${CMAKE_CURRENT_BINARY_DIR}")
 # Now re-configure for the server
 set(SERVER_MAIN ON)
 configure_file(control.h.in control_server.h)
+configure_file(control.cpp.in control_server.cpp)
 target_include_directories(libsensors_server PRIVATE "${CMAKE_CURRENT_BINARY_DIR}")
 # Installation of libsensors_server
 install(TARGETS libsensors libsensors_server)

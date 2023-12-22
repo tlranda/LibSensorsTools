@@ -1,4 +1,4 @@
-#include "control_server.h"
+#include "server.h"
 
 // Set to program start time
 std::chrono::time_point<std::chrono::system_clock> t_minus_one;
@@ -26,6 +26,44 @@ void shutdown(int s = 0) {
     exit(EXIT_SUCCESS);
 }
 
+int poll_cycle(std::chrono::time_point<std::chrono::system_clock> t0) {
+    int satisfied = 0;
+    // Timestamp
+    std::chrono::time_point<std::chrono::system_clock> t1 = std::chrono::system_clock::now();
+    switch (args.format) {
+        case 1:
+            args.log << "Poll update at ";
+        case 0:
+            args.log << std::chrono::duration_cast<std::chrono::nanoseconds>(t1-t0).count() / 1e9;
+            break;
+        case 2:
+            args.log << "{\"event\": \"poll-data\", \"timestamp\": " << std::chrono::duration_cast<std::chrono::nanoseconds>(t1-t0).count() / 1e9 << "," << std::endl;
+            break;
+    }
+    // TODO: Collection only in post-wait phase, increment satisfied
+    switch (args.format) {
+        case 0:
+        case 1:
+            args.log << std::endl;
+            if (args.debug >= DebugMinimal) {
+                std::chrono::time_point<std::chrono::system_clock> t2 = std::chrono::system_clock::now();
+                args.error_log << "Updates completed in " << std::chrono::duration_cast<std::chrono::nanoseconds>(t2-t1).count() / 1e9 << "s" << std::endl;
+            }
+            break;
+        case 2:
+            // Have to add a dummy end for JSON record to be compliant
+            args.log << "\"dummy-end\": true" << std::endl;
+            args.log << "}," << std::endl;
+            std::chrono::time_point<std::chrono::system_clock> t2 = std::chrono::system_clock::now();
+            args.log << "{\"event\": \"poll-update\", \"duration\": " <<
+                     std::chrono::duration_cast<std::chrono::nanoseconds>(t2-t1).count() / 1e9 <<
+                     "}," << std::endl;
+            break;
+    }
+    // Sleeping between polls
+    if (args.poll != 0) std::this_thread::sleep_for(args.poll_duration);
+    return satisfied;
+}
 
 int main(int argc, char** argv) {
     t_minus_one = std::chrono::system_clock::now();

@@ -1,3 +1,4 @@
+#cmakedefine SERVER_MAIN
 #ifdef SERVER_MAIN
 #include "control_server.h"
 #else
@@ -176,7 +177,7 @@ void parse(int argc, char** argv) {
                     std::cout << "\t-s | --submer\n\t\t" <<
                                  "Query Submer Pod stats (default: Not queried)" << std::endl;
                     #endif
-                    #ifdef BULID_NVME
+                    #ifdef BUILD_NVME
                     std::cout << "\t-n | --nvme\n\t\t" <<
                                  "Query NVMe device temperatures (default: Not queried)" << std::endl;
                     #endif
