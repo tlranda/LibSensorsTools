@@ -229,7 +229,7 @@ void parse(int argc, char** argv) {
                     break;
                 #endif
                 case 'I':
-                    args.ip_addr = argv[optind];
+                    args.ip_addr = argv[optind-1];
                     break;
             #else
                 case 'C':
@@ -238,6 +238,12 @@ void parse(int argc, char** argv) {
             #endif
             case 'f':
                 args.format = atoi(optarg);
+                // Validate the argument choice
+                if (args.format < 0 || args.format >= count_OutputFormats) {
+                    std::cerr << "Invalid setting for " << argv[optind-2] << ": " << optarg <<
+                    "\n\tFormats are specified by integers [0-" << count_OutputFormats << ")" << std::endl;
+                    bad_args += 1;
+                }
                 break;
             case 'l':
                 args.log_path = std::filesystem::path(optarg);
@@ -272,10 +278,9 @@ void parse(int argc, char** argv) {
                 break;
             case 'd':
                 args.debug = atoi(optarg);
-                if (args.debug < DebugOFF || args.debug > DebugVerbose) { // Invalid debug levels
+                if (args.debug < 0 || args.debug >= count_DebugLevels) { // Invalid debug levels
                     std::cerr << "Invalid setting for " << argv[optind-2] << ": " << optarg <<
-                                 "\n\tValid levels are integers between " << DebugOFF <<
-                                 " and " << DebugVerbose << std::endl;
+                                 "\n\tDebug levels are specified by integers [0-" << count_DebugLevels << ")" << std::endl;
                     bad_args += 1;
                 }
                 break;

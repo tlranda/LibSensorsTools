@@ -112,11 +112,10 @@ int update_cpus(void) {
             double prev = i->temperature[j];
             if (args.debug >= DebugVerbose) {
                 switch (args.format) {
-                    case 0:
-                    case 2:
-                        break;
-                    case 1:
+                    case OutputHuman:
                         args.log << "Chip " << i->chip_name << " temp BEFORE " << prev << std::endl;
+                    case OutputCSV:
+                    case OutputJSON:
                         break;
                 }
             }
@@ -124,13 +123,13 @@ int update_cpus(void) {
             if (i->temperature[j] <= i->initial_temperature[j]) at_below_initial_temperature++;
             if (args.debug >= DebugVerbose || update) {
                 switch (args.format) {
-                    case 0:
+                    case OutputCSV:
                         args.log << "," << i->temperature[j];
                         break;
-                    case 1:
+                    case OutputHuman:
                         args.log << " temp NOW " << i->temperature[j] << std::endl;
                         break;
-                    case 2:
+                    case OutputJSON:
                         args.log << "\t\"cpu-" << i->chip_name << "-temperature-" << j << "\": " << i->temperature[j] << "," << std::endl;
                         break;
                 }
@@ -147,13 +146,13 @@ int update_cpus(void) {
         else i->hz = std::stoi(buf);
         if (args.debug >= DebugVerbose || update) {
             switch (args.format) {
-                case 0:
+                case OutputCSV:
                     args.log << "," << i->hz;
                     break;
-                case 1:
+                case OutputHuman:
                     args.log << "Core " << i->coreid << " Frequency: " << i->hz << std::endl;
                     break;
-                case 2:
+                case OutputJSON:
                     args.log << "\t\"core-" << i->coreid << "-frequency\": " << i->hz << "," << std::endl;
                     break;
             }

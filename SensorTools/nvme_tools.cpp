@@ -63,13 +63,13 @@ int update_nvme(void) {
             if (temp <= i->initial_temperature[k]) at_below_initial_temperature++;
             if (args.debug >= DebugVerbose || update) {
                 switch (args.format) {
-                    case 0:
+                    case OutputCSV:
                         args.log << "," << i->temperature[k];
                         break;
-                    case 1:
+                    case OutputHuman:
                         args.log << "NVMe " << i->index << "_" << k << " Temperature: " << i->temperature[k] << std::endl;
                         break;
-                    case 2:
+                    case OutputJSON:
                         args.log << "\t\"nvme-" << i->index << "-" << k << "-temperature\": " << i->temperature[k] << "," << std::endl;
                         break;
                 }
@@ -79,8 +79,7 @@ int update_nvme(void) {
     return at_below_initial_temperature;
 }
 
-// Definition of external variables for CPU tools
-//std::vector<std::unique_ptr<nvme_cache>> known_nvme;
+// Definition of external variables for NVME tools
 std::vector<nvme_cache> known_nvme;
 int nvme_to_satisfy = 0;
 

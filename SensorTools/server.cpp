@@ -9,7 +9,7 @@ std::vector<int> client_sockets;
 // Cleanup calls should be based on globally available information; process-killing interrupts will go through this function
 void shutdown(int s = 0) {
     std::chrono::time_point<std::chrono::system_clock> t0 = std::chrono::system_clock::now();
-    if (args.format == 2) {
+    if (args.format == OutputJSON) {
         args.log << "{ \"event\": \"shutdown\", \"timestamp\": " <<
                  std::chrono::duration_cast<std::chrono::nanoseconds>(t0-t_minus_one).count() / 1e9 <<
                  " }" << std::endl <<
@@ -31,26 +31,26 @@ int poll_cycle(std::chrono::time_point<std::chrono::system_clock> t0) {
     // Timestamp
     std::chrono::time_point<std::chrono::system_clock> t1 = std::chrono::system_clock::now();
     switch (args.format) {
-        case 1:
+        case OutputHuman:
             args.log << "Poll update at ";
-        case 0:
+        case OutputCSV:
             args.log << std::chrono::duration_cast<std::chrono::nanoseconds>(t1-t0).count() / 1e9;
             break;
-        case 2:
+        case OutputJSON:
             args.log << "{\"event\": \"poll-data\", \"timestamp\": " << std::chrono::duration_cast<std::chrono::nanoseconds>(t1-t0).count() / 1e9 << "," << std::endl;
             break;
     }
     // TODO: Collection only in post-wait phase, increment satisfied
     switch (args.format) {
-        case 0:
-        case 1:
+        case OutputCSV:
+        case OutputHuman:
             args.log << std::endl;
             if (args.debug >= DebugMinimal) {
                 std::chrono::time_point<std::chrono::system_clock> t2 = std::chrono::system_clock::now();
                 args.error_log << "Updates completed in " << std::chrono::duration_cast<std::chrono::nanoseconds>(t2-t1).count() / 1e9 << "s" << std::endl;
             }
             break;
-        case 2:
+        case OutputJSON:
             // Have to add a dummy end for JSON record to be compliant
             args.log << "\"dummy-end\": true" << std::endl;
             args.log << "}," << std::endl;
@@ -81,7 +81,7 @@ int main(int argc, char** argv) {
     // Command line argument parsing
     parse(argc, argv);
     if (args.debug >= DebugVerbose) args.error_log << "The program lives" << std::endl;
-    if (args.format == 2) {
+    if (args.format == OutputJSON) {
         args.log << "[" << std::endl;
         args.log << "{\"arguments\": { " << std::endl <<
                     "\t\"help\": " << args.help << "," << std::endl <<
@@ -110,12 +110,13 @@ int main(int argc, char** argv) {
         "Clients: " << args.clients << std::endl <<
         "Format: ";
         switch(args.format) {
-            case 0:
+            case OutputCSV:
                 args.error_log << "csv";
                 break;
-            case 1:
+            case OutputHuman:
                 args.error_log << "human-readable";
                 break;
+            // case OutputJSON is not reachable
         }
         args.error_log << std::endl << "Log: " << args.log << std::endl <<
         "Error log: " << args.error_log << std::endl <<
@@ -134,7 +135,7 @@ int main(int argc, char** argv) {
     }
 
     // Denote library versions
-    if (args.format == 2) {
+    if (args.format == OutputJSON) {
         args.log << "{\"versions\": {" << std::endl <<
                     "\t\"SensorTools\": \"" << SensorToolsVersion << "\"," << std::endl <<
                     "\t\"Nlohmann_Json\": \"" <<
@@ -148,8 +149,9 @@ int main(int argc, char** argv) {
                     NLOHMANN_JSON_VERSION_MAJOR << "." <<
                     NLOHMANN_JSON_VERSION_MINOR << "." <<
                     NLOHMANN_JSON_VERSION_PATCH << std::endl;
-        if (args.version) exit(EXIT_SUCCESS);
     }
+    // If version argument supplied, OK to exit now
+    if (args.version) exit(EXIT_SUCCESS);
 
     // No caching, no headers for the server process
 
@@ -240,7 +242,7 @@ int main(int argc, char** argv) {
 
     // Start timing
     std::chrono::time_point<std::chrono::system_clock> t0 = std::chrono::system_clock::now();
-    if (args.format == 2) args.log << "{\"event\": \"initialization\", \"duration\": " << std::chrono::duration_cast<std::chrono::nanoseconds>(t0-t_minus_one).count() / 1e9 << "}," << std::endl;
+    if (args.format == OutputJSON) args.log << "{\"event\": \"initialization\", \"duration\": " << std::chrono::duration_cast<std::chrono::nanoseconds>(t0-t_minus_one).count() / 1e9 << "}," << std::endl;
     else args.error_log << "@@Initialized at " << std::chrono::duration_cast<std::chrono::nanoseconds>(t0-t_minus_one).count() / 1e9 << "s" << std::endl;
 
     // All clients connected, notify them to start polling
@@ -257,7 +259,7 @@ int main(int argc, char** argv) {
     else { // There's a call to fork
         // Initial Wait
         std::chrono::time_point<std::chrono::system_clock> t1 = std::chrono::system_clock::now();
-        if (args.format == 2)
+        if (args.format == OutputJSON)
             args.log << "{\"event\": \"initial-wait-start\", \"timestamp\": " << std::chrono::duration_cast<std::chrono::nanoseconds>(t1-t_minus_one).count() / 1e9 << "}," << std::endl;
         else if (args.debug >= DebugVerbose)
             args.error_log << "Begin initial wait. Should last " << args.initial_wait << " seconds" << std::endl;
@@ -268,7 +270,7 @@ int main(int argc, char** argv) {
             waiting = std::chrono::duration_cast<std::chrono::nanoseconds>(t1-t0).count() / 1e9;
         }
         // After initial wait expires, change initial temperatures
-        if (args.format == 2) {
+        if (args.format == OutputJSON) {
             args.log << "{\"event\": \"initial-wait-end\", \"timestamp\": " << std::chrono::duration_cast<std::chrono::nanoseconds>(t1-t_minus_one).count() / 1e9 << ", \"wrapped-command\": \"";
             int argidx = 0;
             // NOTE: Not escaped for JSON format, so this value could break the file
@@ -305,10 +307,9 @@ int main(int argc, char** argv) {
                 // Briefly check in on child process, then go back to collecting results
                 result = waitpid(pid, &status, WNOHANG);
                 poll_result = poll_cycle(t0);
-            }
-            while (result == 0);
+            } while (result == 0);
             std::chrono::time_point<std::chrono::system_clock> t2 = std::chrono::system_clock::now();
-            if (args.format == 2) {
+            if (args.format == OutputJSON) {
                 args.log << "{\"event\": \"wrapped-command-end\", \"timestamp\": " << std::chrono::duration_cast<std::chrono::nanoseconds>(t2-t_minus_one).count() / 1e9 << "}," << std::endl;
             }
             else args.error_log << "@@Wrapped command concludes at " << std::chrono::duration_cast<std::chrono::nanoseconds>(t2-t_minus_one).count() / 1e9 << "s" << std::endl;
@@ -323,7 +324,7 @@ int main(int argc, char** argv) {
 
             // Post Wait
             t2 = std::chrono::system_clock::now();
-            if (args.format == 2) args.log << "{\"event\": \"post-wait-start\", \"timestamp\": " << std::chrono::duration_cast<std::chrono::nanoseconds>(t2-t_minus_one).count() / 1e9 << "}," << std::endl;
+            if (args.format == OutputJSON) args.log << "{\"event\": \"post-wait-start\", \"timestamp\": " << std::chrono::duration_cast<std::chrono::nanoseconds>(t2-t_minus_one).count() / 1e9 << "}," << std::endl;
             else args.error_log << "@@Post wait begins at " << std::chrono::duration_cast<std::chrono::nanoseconds>(t2-t_minus_one).count() / 1e9 << "s" << std::endl;
             if (args.debug >= DebugVerbose) args.error_log << "Post wait can last up to " << args.post_wait << " seconds" << std::endl;
             t2 = std::chrono::system_clock::now();
@@ -357,7 +358,7 @@ int main(int argc, char** argv) {
                 }
             }
             t2 = std::chrono::system_clock::now();
-            if (args.format == 2) {
+            if (args.format == OutputJSON) {
                 args.log << "{\"event\": \"post-wait-end\", \"timestamp\": " << std::chrono::duration_cast<std::chrono::nanoseconds>(t2-t_minus_one).count() / 1e9 << ", \"max-wait\": ";
                 if (args.post_wait < 0) {
                     args.log << -args.post_wait << ", \"reason\": ";
@@ -381,6 +382,7 @@ int main(int argc, char** argv) {
     clientMsgBuffer[4] = '\0';
     for (std::vector<int>::iterator it = client_sockets.begin(); it != client_sockets.end(); it++) send(*it, clientMsgBuffer, NAME_BUFFER_SIZE, 0);
     // Give clients a chance to disconnect
+    // TODO: There should be a safer way to perform this wait
     sleep(1);
 
     if (args.debug >= DebugVerbose)

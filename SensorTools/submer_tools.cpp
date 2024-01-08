@@ -86,13 +86,13 @@ int update_submers(void) {
             at_below_initial_temperature++;
         if (args.debug >= DebugVerbose || update) {
             switch (args.format) {
-                case 0:
+                case OutputCSV:
                     args.log << "," << j->json_data["temperature"];
                     break;
-                case 1:
+                case OutputHuman:
                     args.log << "Submer Temperature: " << j->json_data["temperature"] << std::endl;
                     break;
-                case 2:
+                case OutputJSON:
                     args.log << "\t\"submer-" << j->index << "-temperature\": " << j->json_data["temperature"] << "," << std::endl;
                     break;
             }

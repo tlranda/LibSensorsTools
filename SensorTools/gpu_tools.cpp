@@ -57,16 +57,15 @@ int update_gpus(void) {
     for (std::vector<gpu_cache>::iterator i = known_gpus.begin(); i != known_gpus.end(); i++) {
         if (args.debug >= DebugVerbose) {
             switch (args.format) {
-                case 0:
-                case 2:
-                    break;
-                case 1:
+                case OutputHuman:
                     args.log << "GPU " << i->device_ID << " " << i->deviceName << " BEFORE" << std::endl;
                     args.log << "\tGPU Temperature: " << i->gpu_temperature << std::endl;
                     args.log << "\tMemory Temperature: " << i->mem_temperature << std::endl;
                     args.log << "\tPower Usage/Limit: " << i->powerUsage << " / " << i->powerLimit << std::endl;
                     args.log << "\tUtilization: " << i->utilization.gpu << "\% GPU " << i->utilization.memory << "\% Memory " << std::endl;
                     args.log << "\tPerformance State: " << i->pState << std::endl;
+                case OutputCSV:
+                case OutputJSON:
                     break;
             }
         }
@@ -82,12 +81,12 @@ int update_gpus(void) {
         nvmlDeviceGetPerformanceState(i->device_Handle, &i->pState);
         if (args.debug >= DebugVerbose || update) {
             switch (args.format) {
-                case 0:
+                case OutputCSV:
                     args.log << "," << i->deviceName << "," << i->gpu_temperature << "," << i->mem_temperature << "," <<
                              i->powerUsage << "," << i->powerLimit << "," << i->utilization.gpu << "," <<
                              i->utilization.memory << "," << i->memory.used << "," << i->memory.total << "," << i->pState;
                     break;
-                case 1:
+                case OutputHuman:
                     args.log << "GPU " << i->device_ID << " " << i->deviceName << " AFTER" << std::endl;
                     args.log << "\tGPU Temperature: " << i->gpu_temperature << std::endl;
                     args.log << "\tMemory Temperature: " << i->mem_temperature << std::endl;
@@ -95,7 +94,7 @@ int update_gpus(void) {
                     args.log << "\tUtilization: " << i->utilization.gpu << "\% GPU " << i->utilization.memory << "\% Memory " << std::endl;
                     args.log << "\tPerformance State: " << i->pState << std::endl;
                     break;
-                case 2:
+                case OutputJSON:
                     args.log << "\t\"gpu-" << i->device_ID << "-name\": \"" << i->deviceName << "\"," << std::endl <<
                                 "\t\"gpu-" << i->device_ID << "-gpu-temperature\": " << i->gpu_temperature << "," << std::endl <<
                                 "\t\"gpu-" << i->device_ID << "-memory-temperature\": " << i->mem_temperature << "," << std::endl <<
