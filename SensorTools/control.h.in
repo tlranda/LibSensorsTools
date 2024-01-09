@@ -20,7 +20,7 @@
 
 // LibSensors and NVML demos typically allocate this much space for chip/driver names
 #define NAME_BUFFER_SIZE 200
-#define SensorToolsVersion "0.1.0"
+#define SensorToolsVersion "0.2.0"
 #define SensorToolsPort 8080
 #cmakedefine BUILD_CPU
 #cmakedefine BUILD_GPU
@@ -63,6 +63,10 @@ public:
     void revert();
     // Permit outputting this object to streams for debug
     friend std::ostream& operator<<(std::ostream& os, const Output& obj);
+    // Quick checks for convenience
+    bool is_cout();
+    bool is_cerr();
+    bool is_custom();
 
 private:
     std::mutex fileMutex;

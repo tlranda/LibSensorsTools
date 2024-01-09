@@ -9,14 +9,17 @@ project(LibSensorTools
 # Some basic settings
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
+set(CMAKE_CXX_FLAGS_DEBUG_INIT "-Wall -g3")
+set(CMAKE_CXX_FLAGS_RELEASE_INIT "-Wall")
 
 # Sources for each exectuable
 # Server::
-set(SERVER_SOURCES server.cpp control_server.cpp)
+set(SERVER_SOURCES control_server.cpp common_driver_server.cpp)
 set(SERVER_LIBRARIES)
 # ::Server
+
 # Libsensors::
-set(LIBSENSORS_SOURCES sensor_tool.cpp control_sensors.cpp)
+set(LIBSENSORS_SOURCES control_sensors.cpp common_driver_libsensors.cpp)
 set(LIBSENSORS_LIBRARIES)
 # Options define which tools get built into libsensors
 option(BUILD_CPU "Build the lm-sensors tool" ON)
@@ -51,7 +54,7 @@ endif(BUILD_NVME)
 # Common compile options and linked libraries
 set(COMMON_OPTIONS -march=native -O3)
 set(COMMON_LIBRARIES m stdc++fs)
-set(COMMON_INCLUDE_DIRS ../submodules/nlohmann_json/single_include)
+set(COMMON_INCLUDE_DIRS ../submodules/nlohmann_json/single_include .)
 add_library(CommonSettings INTERFACE)
 target_compile_options(CommonSettings INTERFACE ${COMMON_OPTIONS})
 target_link_libraries(CommonSettings INTERFACE ${COMMON_LIBRARIES})
@@ -72,11 +75,19 @@ set_target_properties(libsensors_server PROPERTIES OUTPUT_NAME "${hostname}_sens
 # Special header configurations
 configure_file(control.h.in control.h)
 configure_file(control.cpp.in control_sensors.cpp)
+configure_file(common_driver.h common_driver_libsensors.h)
+configure_file(common_driver.cpp common_driver_libsensors.cpp)
 target_include_directories(libsensors PRIVATE "${CMAKE_CURRENT_BINARY_DIR}")
 # Now re-configure for the server
+set(BUILD_CPU OFF)
+set(BUILD_GPU OFF)
+set(BUILD_POD OFF)
+set(BUILD_NVME OFF)
 set(SERVER_MAIN ON)
 configure_file(control.h.in control_server.h)
 configure_file(control.cpp.in control_server.cpp)
+configure_file(common_driver.h common_driver_server.h)
+configure_file(common_driver.cpp common_driver_server.cpp)
 target_include_directories(libsensors_server PRIVATE "${CMAKE_CURRENT_BINARY_DIR}")
 # Installation of libsensors_server
 install(TARGETS libsensors libsensors_server)

@@ -86,6 +86,17 @@ void Output::closeFile() {
     std::memset(fname, 0, NAME_BUFFER_SIZE);
 }
 
+bool Output::is_cout() {
+    return &fileStream == &std::cout;
+}
+
+bool Output::is_cerr() {
+    return &fileStream == &std::cerr;
+}
+
+bool Output::is_custom() {
+    return (&fileStream != &std::cout) && (&fileStream != &std::cerr);
+}
 
 /*
    Read command line and parse arguments
@@ -297,7 +308,7 @@ void parse(int argc, char** argv) {
     if (!args.any_active()) args.default_active(); // Ensure defaults always on
     if (optind < argc) {
         args.wrapped = const_cast<char**>(&argv[optind]);
-        if (args.debug >= DebugMinimal) {
+        if (args.debug >= DebugMinimal && args.error_log.is_cerr()) {
             std::cerr << "Treating additional arguments as a command to wrap:" << std::endl;
             for (int i = 0; i < argc-optind; i++) std::cerr << args.wrapped[i] << " ";
             std::cerr << std::endl;
@@ -314,6 +325,9 @@ void parse(int argc, char** argv) {
                      "Server should run the wrapped command for proper synchronization" << std::endl;
         bad_args += 1;
     }
+    #else
+    if (args.wrapped == nullptr && args.poll != 0)
+        std::cerr << "Warning! No wrapped command but polling indefinitely. You may wish to omit your polling argument for a demo or provide a wrapped command after the -- separator" << std::endl;
     #endif
 
     if (bad_args > 0) exit(EXIT_FAILURE);
