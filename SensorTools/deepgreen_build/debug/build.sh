@@ -1,0 +1,3 @@
+#!/bin/sh
+cmake -DBUILD_CPU=ON -DBUILD_GPU=ON -DBUILD_POD=ON -DBUILD_NVME=ON -DCMAKE_BUILD_TYPE=Release ../.. && make
+
