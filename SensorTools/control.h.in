@@ -78,7 +78,6 @@ private:
     gid_t sudo_gid;
     std::mutex fileMutex;
     std::ofstream fileStream;
-    FILE* fileDescriptor;
     char fname[NAME_BUFFER_SIZE];
 
     bool detectSudo(void);

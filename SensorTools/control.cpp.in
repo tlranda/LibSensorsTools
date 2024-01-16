@@ -89,19 +89,15 @@ std::ostream& operator<<(std::ostream& os, Output& obj) {
     return os;
 }
 void Output::closeFile(void) {
-    if (fileStream.is_open() && is_custom()) {
-        fileStream.close();
-        fclose(fileDescriptor);
-    }
+    if (fileStream.is_open() && is_custom()) fileStream.close();
     std::memset(fname, 0, NAME_BUFFER_SIZE);
 }
 bool Output::openFile(const char * openName) {
     std::lock_guard<std::mutex> lock(fileMutex);
     closeFile();
-    fileDescriptor = fopen(openName, "a");
     fileStream.open(openName, std::ios::out | std::ios::app);
     if (fileStream.is_open()) {
-        if (detectedAsSudo && (fchown(fileno(fileDescriptor), sudo_uid, sudo_gid) == -1))
+        if (detectedAsSudo && (chown(openName, sudo_uid, sudo_gid) == -1))
             std::cerr << "Failed to change ownership of file '" << openName <<"', will be owned by root" << std::endl;
         std::strncpy(fname, openName, NAME_BUFFER_SIZE);
         return true;
