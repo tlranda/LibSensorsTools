@@ -548,18 +548,24 @@ void client_connect_loop() {
         }
         attempt++;
     }
-    int satisfied;
+    int satisfied, n_polls = 0;
     char serverMsgBuffer[NAME_BUFFER_SIZE] = {0};
     // Receive server start message
     args.error_log << "Wait for server ready message" << std::endl;
     recv(clientSocket, serverMsgBuffer, NAME_BUFFER_SIZE, 0);
     args.error_log << "Received server ready message. Begin polling" << std::endl;
     while (1) {
+        if (args.debug >= DebugMinimal)
+            args.error_log << "Client polls iteration #" << n_polls << std::endl;
         satisfied = poll_cycle(t_minus_one); // Monitor until server signals for termination
         fd_set readfds;
         FD_ZERO(&readfds);
         FD_SET(clientSocket, &readfds);
-        int activity = pselect(clientSocket+1, &readfds, NULL, NULL, NULL, NULL);
+        // Set the timeout to zero! Otherwise you block
+        struct timespec timeout;
+        timeout.tv_sec = 0;
+        timeout.tv_nsec = 0;
+        int activity = pselect(clientSocket+1, &readfds, NULL, NULL, &timeout, NULL);
         if ((activity < 0) && (errno != EINTR)) args.error_log << "Selection error" << std::endl;
         if (FD_ISSET(clientSocket, &readfds)) {
             recv(clientSocket, serverMsgBuffer, NAME_BUFFER_SIZE, 0);
@@ -568,6 +574,7 @@ void client_connect_loop() {
             else
                 args.error_log << "Client received unexpected message from server: " << serverMsgBuffer << std::endl;
         }
+        n_polls++;
     }
     args.error_log << "Closing connection to server" << std::endl;
     close(clientSocket);

@@ -10,7 +10,7 @@
 execution_mode=$(( $# > 0 ));
 
 # Command to launch from server nodes
-bench_command="/home/tlranda/sensors_tools/Benchmarks/multiGPU_Stream.sh";
+bench_command="./sleep_counter.sh 4"; #"/home/tlranda/sensors_tools/Benchmarks/multiGPU_Stream.sh";
 # Arguments to control the sensing processes
 FORMAT="2";
 POLL="1";
@@ -18,7 +18,9 @@ INITIAL_WAIT="5";
 POST_WAIT="-300";
 DEBUG_LEVEL="2";
 # Supply an output directory for all logs / error files from clients and servers
-outputdir="";
+outputdir="demo";
+# Automatically make a subdirectory to prevent clobbering repeated runs (0=True, 1=False)
+unique_subdir=0;
 
 # Pair the server name and IP (name used for SSH-command launching, IP given to all clients)"
 server_list=( "deepgreen" );
@@ -26,7 +28,7 @@ server_ip=( "172.16.10.1" );
 # Clients for servers (NOTE: Server IPs will be extended to match length of clients)
 # ie: servers=[A], clients=[B,C,D,E,F,G] ==> pairings={A: [B,C,D,E,F,G]}
 # ie: servers=[A,B], clients=[C,D,E,F,G] ==> pairings={A: [C,E,G], B: [D,F]}
-client_list=( "deepgreen" "n05" "n07" );
+client_list=( "deepgreen" ) #( "deepgreen" "n05" "n07" );
 
 # END PREAMBLE -- BELOW HERE LIES THE SCRIPT ITSELF
 ###################################################
@@ -114,10 +116,36 @@ done;
 # Make outputdir if not given, ensure it exists
 if [[ ${outputdir} == "" ]]; then
     outputdir=${PWD};
+    if [[ ${unique_subdir} -eq 0 ]]; then
+        outputdir="${outputdir}/unique";
+        if [[ -e "${outputdir}" ]]; then
+            counter=1;
+            while [[ -e "${outputdir}_${counter}" ]]; do
+                ((counter++))
+            done;
+            outputdir="${outputdir}_${counter}";
+        fi
+    fi
+    if [[ ${execution_mode} -eq 0 ]]; then
+        mkdir -p ${outputdir};
+    fi
 else
     outputdir=$(realpath "${outputdir}");
-    mkdir -p ${outputdir};
+    if [[ ${unique_subdir} -eq 0 ]]; then
+        outputdir="${outputdir}/unique";
+        if [[ -e "${outputdir}" ]]; then
+            counter=1;
+            while [[ -e "${outputdir}_${counter}" ]]; do
+                ((counter++))
+            done;
+            outputdir="${outputdir}_${counter}";
+        fi
+    fi
+    if [[ ${execution_mode} -eq 0 ]]; then
+        mkdir -p ${outputdir};
+    fi
 fi
+echo "Logging results to: ${outputdir}";
 
 
 # Set up servers
@@ -149,6 +177,10 @@ for (( idx=0; idx < ${#client_list[@]}; ++idx)); do
     IFS=${old_ifs};
     echo -e "\tClient supports flags: ${client_options}";
     client_cmd="${client_programs[$idx]} -${client_options} -f ${FORMAT} -l ${outputdir}/${client_list[$idx]}_client.${EXTENSION} -L ${outputdir}/${client_list[$idx]}_client.error -p ${POLL} -i ${INITIAL_WAIT} -w ${POST_WAIT} -d ${DEBUG_LEVEL} -I ${server_ip[$idx]} &";
+    # Have to add sudo for -n
+    if [[ "${client_options}" == *"n"* ]]; then
+        client_cmd="sudo ${client_cmd}";
+    fi
     if [[ ${client_list[$idx]} != ${HOSTNAME} ]]; then
         echo "Add ssh for this command";
         client_cmd="ssh ${client_list[$idx]} ${client_cmd}";
