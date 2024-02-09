@@ -1,5 +1,9 @@
 #!/bin/bash
 
+# Ensure CWD is correct
+cd `dirname $0`;
+# In case you don't want to use localized paths
+path_to_git_repo=`git rev-parse --show-toplevel`;
 ################################################
 # BEGIN PREAMBLE -- CUSTOMIZE HERE TO AFFECT JOB
 # !! Relative paths will be relative to script's CWD when called / started !!
@@ -10,7 +14,8 @@
 execution_mode=$(( $# > 0 ));
 
 # Command to launch from server nodes
-bench_command="./sleep_counter.sh 4"; #"/home/tlranda/sensors_tools/Benchmarks/multiGPU_Stream.sh";
+#bench_command="${path_to_git_repo}/Benchmarks/./sleep_counter.sh 4";
+bench_command="${path_to_git_repo}/Benchmarks/./multiGPU_Stream.sh";
 # Arguments to control the sensing processes
 FORMAT="2";
 POLL="1";
@@ -18,7 +23,7 @@ INITIAL_WAIT="5";
 POST_WAIT="-300";
 DEBUG_LEVEL="2";
 # Supply an output directory for all logs / error files from clients and servers
-outputdir="demo";
+outputdir="chill_test";
 # Automatically make a subdirectory to prevent clobbering repeated runs (0=True, 1=False)
 unique_subdir=0;
 
@@ -28,7 +33,8 @@ server_ip=( "172.16.10.1" );
 # Clients for servers (NOTE: Server IPs will be extended to match length of clients)
 # ie: servers=[A], clients=[B,C,D,E,F,G] ==> pairings={A: [B,C,D,E,F,G]}
 # ie: servers=[A,B], clients=[C,D,E,F,G] ==> pairings={A: [C,E,G], B: [D,F]}
-client_list=( "deepgreen" ) #( "deepgreen" "n05" "n07" );
+#client_list=( "deepgreen" );
+client_list=( "deepgreen" "n05" "n07" );
 
 # END PREAMBLE -- BELOW HERE LIES THE SCRIPT ITSELF
 ###################################################
@@ -82,10 +88,10 @@ for ((idx=0; idx < ${#server_ip[@]}; ++idx)); do
         insane=1;
     fi
     # Server program exists
-    server_exe="$(git rev-parse --show-toplevel)/SensorTools/${server_list[$idx]}_build/release/${server_list[$idx]}_sensors_server";
+    server_exe="${path_to_git_repo}/SensorTools/${server_list[$idx]}_build/release/${server_list[$idx]}_sensors_server";
     if [[ ! -f ${server_exe} || ! -x ${server_exe} ]]; then
         echo "Server executable for ${server_list[$idx]} not found or not executable!";
-        echo "Ensure you have built the CMake release version under the directory $(git rev-parse --show-toplevel)/SensorTools/${server_list[$idx]}_build";
+        echo "Ensure you have built the CMake release version under the directory ${path_to_git_repo}/SensorTools/${server_list[$idx]}_build";
         insane=1;
     else
         server_programs=( ${server_programs[@]} ${server_exe} );
@@ -95,10 +101,10 @@ done;
 client_programs=( );
 for ((idx=0; idx < ${#client_list[@]}; ++idx)); do
     # Server program exists
-    client_exe="$(git rev-parse --show-toplevel)/SensorTools/${client_list[$idx]}_build/release/${client_list[$idx]}_sensors";
+    client_exe="${path_to_git_repo}/SensorTools/${client_list[$idx]}_build/release/${client_list[$idx]}_sensors";
     if [[ ! -f ${client_exe} || ! -x ${client_exe} ]]; then
         echo "Client executable for ${client_list[$idx]} not found or not executable!";
-        echo "Ensure you have built the CMake release version under the directory $(git rev-parse --show-toplevel)/SensorTools/${client_list[$idx]}_build";
+        echo "Ensure you have built the CMake release version under the directory ${path_to_git_repo}/SensorTools/${client_list[$idx]}_build";
         insane=1;
     else
         client_programs=( ${client_programs[@]} ${client_exe} );
@@ -107,7 +113,7 @@ done;
 if [[ ${insane} -ne 0 ]]; then
     exit 1;
 fi
-# Extend server ips to match length of client list (continuous extenstion method)
+# Extend server ips to match length of client list (continuous extension method)
 idx=0;
 while [[ ${#server_ip[@]} -lt ${#client_list[@]} ]]; do
     server_ip=( ${server_ip[@]} ${server_ip[$idx]} );
@@ -171,18 +177,23 @@ for (( idx=0; idx < ${#client_list[@]}; ++idx)); do
     # Find client executable's supported interface arguments
     old_ifs="$IFS";
     IFS="";
-    client_options=`ssh ${client_list[$idx]} ${client_programs[$idx]} -h |
-                    grep -e "-c |" -e "-g |" -e "-s |" -e "-n |" |
-                    awk '{print substr($1,2)}' | tr -d "\n"`
+    # Grep help from the program for flags, extract them into a continuous substring
+    client_options_fetch="${client_programs[$idx]} -h | grep -e \"-[cgsn] |\" | awk '{print substr(\$1,2)}' | tr -d \"\n\"";
+    if [[ ${client_list[$idx]} != ${HOSTNAME} ]]; then
+        # Run on remote host to ensure the program launches properly
+        client_options_fetch="ssh ${client_list[$idx]} ${client_options_fetch}";
+    fi
+    client_options=`eval "${client_options_fetch}"`;
     IFS=${old_ifs};
     echo -e "\tClient supports flags: ${client_options}";
     client_cmd="${client_programs[$idx]} -${client_options} -f ${FORMAT} -l ${outputdir}/${client_list[$idx]}_client.${EXTENSION} -L ${outputdir}/${client_list[$idx]}_client.error -p ${POLL} -i ${INITIAL_WAIT} -w ${POST_WAIT} -d ${DEBUG_LEVEL} -I ${server_ip[$idx]} &";
     # Have to add sudo for -n
     if [[ "${client_options}" == *"n"* ]]; then
+        echo -e "\tAdd sudo for this command";
         client_cmd="sudo ${client_cmd}";
     fi
     if [[ ${client_list[$idx]} != ${HOSTNAME} ]]; then
-        echo "Add ssh for this command";
+        echo -e "\tAdd ssh for this command";
         client_cmd="ssh ${client_list[$idx]} ${client_cmd}";
     fi
     echo "${client_cmd}";
