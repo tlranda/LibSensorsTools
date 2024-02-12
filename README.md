@@ -26,6 +26,9 @@ This dependency is added as a submodule as not all package managers provide dire
 
 ## Dependencies
 
+This project is built with Nlohmann JSON, a submodule is provided to ensure compatibility.
+Clone the repository by adding `--recurse-submodules` to your `git clone` command, or run `git submodule update --init --recursive` to check them out if you didn't fetch them during repository clonging.
+
 For CPU sensing, lm-sensors and its development tools must be installed.
 See their repository linked above for instructions.
 The CMake build variable is `-DBUILD_CPU=ON`, which is on by default.
@@ -37,7 +40,7 @@ The CMake build variable is `-DBUILD_GPU=ON`, which is OFF by default.
 For Submer sensing, the webapi linked in the submer_api.h document must be accessible by your machine.
 The CMake build variable is `-DBUILD_POD=ON`, which is OFF by default.
 
-For NVMe sensing, libnvme must be installed through the provided submodule.
+For NVMe sensing, libnvme must be installed through the provided LibNVMe submodule.
 The CMake build variable is `-DBUILD_NVME=ON`, which is OFF by default.
 
 ## Build
@@ -101,9 +104,20 @@ For full options to customize program behaviors, you can use the `-h | --help` a
 * JSON output
     + The `-f 2 | --format 2` argument will output the normal data in JSON rather than CSV format. Due to the flexibility of data coherency in JSONs, this unifies some key timing information (such as when a wrapped command starts and stops) all into a single output file for your downstream parsing purposes.
         - The JSON format also automatically includes all arguments and versions in its records
-        - The recorded data is exactly the same, however the field naming conventions are changed to prefer '-' separators over '_' separators for CSVs.
+        - The recorded data is exactly the same, however the field naming conventions are changed to prefer '-' separators over '\_' separators for CSVs.
         - Due to the JSON format, each polling cycle ends with a dummy field called "dummy-end" which is always true.
         - While the JSON format is larger on disk compared to the CSV format, we observe similar minimum update latency to the CSV and expect there is no significant difference in tool overhead/performance as the actual API access and data collation are more time-consuming than basic I/O.
+* Server-Client Setup
+    + Utilizing the separate build targets, multi-node processing is provided through a server-client infrastructure.
+    + Generally, the server should be the only runtime that has a wrapped command.
+      - All clients will monitor their own nodes, but do not transmit data to the server. Have each client write to a distinct output file.
+      - The server process does not include any tools for sensing and only acts as a coordinator for its clients.
+    + Server controls:
+      - The server utilizes `-C [number] | --clients [number]` to know the exact number of clients that will connect (Only use one client per node).
+      - The server also utilizes the `-t [timeout] | --timeout [timeout]` to early-terminate if the expected number of clients fail to arrive.
+    + Client controls:
+      - The client utilizes `-I [IP_ADDR] | --ip-address [IP_ADDR]` to know which IP address will connect it to a server (uses port 8080 unless redefined in [control.h.in](control.h.in))
+      - The client has a limited number of attempts to reach the server (default: 10, redefined by `-C [number] | --connection-attempts [number]`, use a negative value for infinite attempts) and can also take a timeout via `-t [timeout] | --timeout [timeout]`.
 
 ## Contribute
 
