@@ -18,7 +18,7 @@ void cache_gpus(void) {
     int n_devices;
     cudaGetDeviceCount(&n_devices);
 
-    for (int i = 0; i <= n_devices; i++) {
+    for (int i = 0; i < n_devices; i++) {
         if (args.debug >= DebugVerbose) args.error_log << "Begin caching GPU " << i << std::endl;
         // Prepare candidate
         gpu_cache candidate;
