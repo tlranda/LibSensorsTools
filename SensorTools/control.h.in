@@ -23,7 +23,7 @@
 
 // LibSensors and NVML demos typically allocate this much space for chip/driver names
 #define NAME_BUFFER_SIZE 200
-#define SensorToolsVersion "0.2.0"
+#define SensorToolsVersion "0.2.1"
 #define SensorToolsPort 8080
 #cmakedefine BUILD_CPU
 #cmakedefine BUILD_GPU
@@ -125,11 +125,13 @@ typedef struct argstruct {
          shutdown = 0;
     #ifdef SERVER_MAIN
     int clients = 0;
+    #else
+    int connection_attempts = 10;
     #endif
     short format = 0, debug = 0;
     std::filesystem::path log_path, error_log_path;
     Output log, error_log = Output(false, true);
-    double poll = 0., initial_wait = 0., post_wait = 0.;
+    double poll = 0., initial_wait = 0., post_wait = 0., timeout = -1.;
     std::chrono::duration<double> poll_duration, initial_duration, post_duration;
     char **wrapped, *ip_addr = nullptr;
     bool any_active(void) {

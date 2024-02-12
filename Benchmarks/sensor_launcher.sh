@@ -162,7 +162,7 @@ for (( idx=0; idx < ${#server_list[@]}; ++idx)); do
     echo "Set up server: ${server_list[$idx]}";
     n_clients=$(grep -o ${server_ip[$idx]} <<< "${server_ip[@]}" | wc -l);
     echo -e "\tNumber of clients: ${n_clients}";
-    server_cmd="${server_programs[$idx]} -f ${FORMAT} -l ${outputdir}/${server_list[$idx]}_server.${EXTENSION} -L ${outputdir}/${server_list[$idx]}_server.error -p ${POLL} -i ${INITIAL_WAIT} -w ${POST_WAIT} -d ${DEBUG_LEVEL} -C $n_clients -- ${bench_command} &";
+    server_cmd="${server_programs[$idx]} -f ${FORMAT} -l ${outputdir}/${server_list[$idx]}_server.${EXTENSION} -L ${outputdir}/${server_list[$idx]}_server.error -p ${POLL} -i ${INITIAL_WAIT} -w ${POST_WAIT} -d ${DEBUG_LEVEL} -C $n_clients -t 60 -- ${bench_command} &";
     if [[ ${server_list[$idx]} != ${HOSTNAME} ]]; then
         echo "Add ssh for this command";
         server_cmd="ssh ${server_list[$idx]} ${server_cmd}";
@@ -188,7 +188,7 @@ for (( idx=0; idx < ${#client_list[@]}; ++idx)); do
     client_options=`eval "${client_options_fetch}"`;
     IFS=${old_ifs};
     echo -e "\tClient supports flags: ${client_options}";
-    client_cmd="${client_programs[$idx]} -${client_options} -f ${FORMAT} -l ${outputdir}/${client_list[$idx]}_client.${EXTENSION} -L ${outputdir}/${client_list[$idx]}_client.error -p ${POLL} -i ${INITIAL_WAIT} -w ${POST_WAIT} -d ${DEBUG_LEVEL} -I ${server_ip[$idx]} &";
+    client_cmd="${client_programs[$idx]} -${client_options} -f ${FORMAT} -l ${outputdir}/${client_list[$idx]}_client.${EXTENSION} -L ${outputdir}/${client_list[$idx]}_client.error -p ${POLL} -i ${INITIAL_WAIT} -w ${POST_WAIT} -d ${DEBUG_LEVEL} -I ${server_ip[$idx]} -t 60 -C 30 &";
     # Have to add sudo for -n
     if [[ "${client_options}" == *"n"* ]]; then
         echo -e "\tAdd sudo for this command";

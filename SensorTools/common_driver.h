@@ -36,7 +36,6 @@
 #include "nvme_tools.h"
 #endif
 
-#define MAX_CLIENT_CONNECT_ATTEMPTS -1 // Most attempts for a client to connect (negative for infinite attempts)
 // End Headers
 
 // Class and Type declarations

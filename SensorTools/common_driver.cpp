@@ -75,6 +75,7 @@ void init_libsensorstools(int argc, char** argv) {
                     "\t\"clients\": " << args.clients << "," << std::endl <<
                     #else
                     "\t\"ip-address\": \"" << ((args.ip_addr == nullptr) ? "N/A" : args.ip_addr) << "\"," << std::endl <<
+                    "\t\"connection-attempts\": \"" << args.connection_attempts << "\"," << std::endl <<
                     #endif
                     "\t\"format\": \"json\"," << std::endl <<
                     "\t\"log\": \"" << args.log << "\"," << std::endl <<
@@ -82,6 +83,7 @@ void init_libsensorstools(int argc, char** argv) {
                     "\t\"poll\": " << args.poll << "," << std::endl <<
                     "\t\"initial-wait\": " << args.initial_wait << "," << std::endl <<
                     "\t\"post-wait\": " << args.post_wait << "," << std::endl <<
+                    "\t\"timeout\": " << args.timeout << "," << std::endl <<
                     "\t\"debug\": " << args.debug << "," << std::endl <<
                     "\t\"version\": \"" << args.version << "\"," << std::endl <<
                     "\t\"wrapped-call\": ";
@@ -113,6 +115,7 @@ void init_libsensorstools(int argc, char** argv) {
         "Clients: " << args.clients << std::endl <<
         #else
         "IP Address: " << ((args.ip_addr == nullptr) ? "N/A" : args.ip_addr) << std::endl <<
+        "Connection Attempts: " << args.connection_attempts << std::endl <<
         #endif
         "Format: ";
         switch(args.format) {
@@ -129,6 +132,7 @@ void init_libsensorstools(int argc, char** argv) {
         "Poll: " << args.poll << std::endl <<
         "Initial Wait: " << args.initial_wait << std::endl <<
         "Post Wait: " << args.post_wait << std::endl <<
+        "Connection Timeout: " << args.timeout << std::endl <<
         "Debug: " << args.debug << std::endl <<
         "Version: " << args.version << std::endl <<
         "Wrapped call: ";
@@ -249,7 +253,17 @@ void init_libsensorstools(int argc, char** argv) {
     }
     // Wait for all clients to connect
     addrlen = sizeof(address);
+    std::chrono::time_point<std::chrono::system_clock> server_timeout_start = std::chrono::system_clock::now();
     while (client_sockets.size() < args.clients) {
+        // Server can shut down if clients never appear
+        std::chrono::time_point<std::chrono::system_clock> server_timeout_now = std::chrono::system_clock::now();
+        if (args.timeout > 0 && (std::chrono::duration_cast<std::chrono::nanoseconds>(server_timeout_now-server_timeout_start).count() / 1e9) >= args.timeout) {
+            args.error_log << "Server received " << client_sockets.size() << "/" << args.clients << " connections; timeout " << args.timeout << " expired" << std::endl;
+            exit(EXIT_FAILURE);
+        }
+        else if (args.timeout > 0 && args.debug >= DebugVerbose) {
+            args.error_log << "Server connections incomplete: " << client_sockets.size() << "/" << args.clients << " active connections. Timeout in " << (std::chrono::duration_cast<std::chrono::nanoseconds>(server_timeout_now-server_timeout_start).count() / 1e9)-args.timeout << "s" << std::endl;
+        }
         // Clear the socket set, always include master socket
         FD_ZERO(&readfds);
         FD_SET(master_socket, &readfds);
@@ -517,12 +531,20 @@ void main_loop() {
     shutdown();
 }
 
+#ifndef SERVER_MAIN
 void client_connect_loop() {
     args.error_log << "Client process attempts to connect to server at " << args.ip_addr << std::endl;
     // We will connect to a server for coordination
     int clientSocket, attempt = 0;
     struct sockaddr_in serverAddr;
+    std::chrono::time_point<std::chrono::system_clock> server_timeout_start = std::chrono::system_clock::now();
     while (1) {
+        // Timeout check
+        std::chrono::time_point<std::chrono::system_clock> server_timeout_now = std::chrono::system_clock::now();
+        if (args.timeout > 0 && (std::chrono::duration_cast<std::chrono::nanoseconds>(server_timeout_now-server_timeout_start).count() / 1e9) >= args.timeout) {
+            args.error_log << "Client failed to locate server; timeout " << args.timeout << " expired" << std::endl;
+            exit(EXIT_FAILURE);
+        }
         // Create client socket
         if ((clientSocket = socket(AF_INET, SOCK_STREAM, 0)) == 0) {
             args.error_log << "Socket creation failed";
@@ -535,8 +557,8 @@ void client_connect_loop() {
         if (connect(clientSocket, (struct sockaddr *)&serverAddr, sizeof(serverAddr)) < 0) {
             args.error_log << "Server Connection attempt #" << attempt+1 << " failed" << std::endl;
             // Final attempt failed
-            if (MAX_CLIENT_CONNECT_ATTEMPTS > 0 && attempt+1 >= MAX_CLIENT_CONNECT_ATTEMPTS) {
-                args.error_log << "Maximum server connection attempts exhausted. Exiting." << std::endl;
+            if (args.connection_attempts > 0 && attempt+1 >= args.connection_attempts) {
+                args.error_log << "Maximum server connection attempts (" << args.connection_attempts << ") exhausted. Exiting." << std::endl;
                 exit(EXIT_FAILURE);
             }
             sleep(1);
@@ -579,6 +601,7 @@ void client_connect_loop() {
     args.error_log << "Closing connection to server" << std::endl;
     close(clientSocket);
 }
+#endif
 
 void simple_poll_cycle_loop() {
     if (args.poll == 0) poll_cycle(t_minus_one); // Single event collection

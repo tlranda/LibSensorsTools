@@ -150,6 +150,7 @@ void parse(int argc, char** argv) {
             {"nvme", no_argument, 0, 'n'},
             #endif
             {"ipaddr", required_argument, 0, 'I'},
+            {"connections", required_argument, 0, 'C'},
         #else
             {"clients", required_argument, 0, 'C'},
         #endif
@@ -159,6 +160,7 @@ void parse(int argc, char** argv) {
         {"poll", required_argument, 0, 'p'},
         {"initial-wait", required_argument, 0, 'i'},
         {"post-wait", required_argument, 0, 'w'},
+        {"timeout", required_argument, 0, 't'},
         {"debug", required_argument, 0, 'd'},
         {"version", no_argument, 0, 'v'},
         {0,0,0,0}
@@ -178,10 +180,8 @@ void parse(int argc, char** argv) {
         "n"
         #endif
         "I:"
-    #else
-        "C:"
     #endif
-    "f:l:L:p:i:w:d:v";
+    "C:f:l:L:p:i:w:t:d:v";
     // Disable getopt's automatic error message -- we'll catch it via the '?' return and shut down
     opterr = 0;
 
@@ -221,6 +221,8 @@ void parse(int argc, char** argv) {
                     #endif
                     std::cout << "\t-I | --ipaddr\n\t\t" <<
                                  "IP address of a server to coordinate with (server controls start/stop of measurements and any applications)" << std::endl;
+                    std::cout << "\t-C [value] | --connections [value]\n\t\t" <<
+                                 "Maximum number of attempts to connect to server (default: " << args.connection_attempts << "), use negative value for infinite" << std::endl;
                 #else
                     std::cout << "\t-C | --clients\n\t\t" <<
                                  "Number of clients to connect to server" << std::endl;
@@ -238,6 +240,14 @@ void parse(int argc, char** argv) {
                 std::cout << "\t-w [interval] | --post-wait [interval]\n\t\t" <<
                              "Floating point interval in seconds to wait after subcommand completion\n\t\t" <<
                              "A negative interval indicates to wait up to that many seconds or when temperatures return to initial levels" << std::endl;
+                std::cout << "\t-t [interval] | --timeout [interval]\n\t\t" <<
+                             "Floating point interval in seconds for servers and clients to cease connection attempts\n\t\t" <<
+                #ifdef SERVER_MAIN
+                             "Servers default to infinte waiting period until all clients arrive"
+                #else
+                             "Clients default to attempting to locate the server up to " << args.connection_attempts << " times (regardless of walltime duration)"
+                #endif
+                             << std::endl;
                 std::cout << "\t-d [level] | --debug [level]\n\t\t" <<
                              "Debug verbosity (default: " << DebugOFF << ", maximum: " << DebugVerbose << ")" << std::endl;
                 std::cout << "\t-v | --version\n\t\t" <<
@@ -268,6 +278,9 @@ void parse(int argc, char** argv) {
                 #endif
                 case 'I':
                     args.ip_addr = argv[optind-1];
+                    break;
+                case 'C':
+                    args.connection_attempts = atoi(optarg);
                     break;
             #else
                 case 'C':
@@ -313,6 +326,9 @@ void parse(int argc, char** argv) {
                 args.post_wait = atof(optarg);
                 // Post wait can be less than zero to indicate a negative timeout
                 args.post_duration = static_cast<std::chrono::duration<double>>(args.post_wait);
+                break;
+            case 't':
+                args.timeout = atof(optarg);
                 break;
             case 'd':
                 args.debug = atoi(optarg);
