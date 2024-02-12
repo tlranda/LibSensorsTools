@@ -153,6 +153,8 @@ else
 fi
 echo "Logging results to: ${outputdir}";
 
+# Record experiment start date
+start_timestamp=`date +\"%F %T %Z\"`;
 
 # Set up servers
 server_template="";
@@ -204,4 +206,10 @@ done;
 
 # Ensure all started processes finish
 wait;
+
+# Perform initial analysis with reasonable defaults
+analysis_call="python3 ../Analysis/temperature_vis.py --inputs ${outputdir}/*_client.${EXTENSION} --output ${outputdir}/temp_analysis.png --min-trace-diff 1 --min-temp-enforce 0 --max-temp-enforce 100 --regex-temperatures cpu gpu --independent-y-scaling --title ${start_timestamp}";
+echo "Sensing terminated. Performing analysis."
+echo "${analysis_call}";
+eval "${analysis_call}";
 
