@@ -77,11 +77,11 @@ def main():
     command_thread.start()
     try:
         input()
-        executor.terminate_process()
-        command_thread.join()
-    except OSError:
+    except (OSError, EOFError):
         while True:
             time.sleep(86400)
+    executor.terminate_process()
+    command_thread.join()
 
 if __name__ == '__main__':
     main()

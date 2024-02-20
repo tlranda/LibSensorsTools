@@ -14,20 +14,21 @@ path_to_git_repo=`git rev-parse --show-toplevel`;
 execution_mode=$(( $# > 0 ));
 
 # Command to launch from server nodes
-#bench_command="${path_to_git_repo}/Benchmarks/./sleep_counter.sh 4";
-bench_command="${path_to_git_repo}/Benchmarks/./multiGPU_Stream.sh";
+bench_command="${path_to_git_repo}/Benchmarks/./sleep_counter.sh 86400";
+#bench_command="${path_to_git_repo}/Benchmarks/./multiGPU_Stream.sh";
 # Arguments to control the sensing processes
 FORMAT="2";
 POLL="1";
-INITIAL_WAIT="5";
-POST_WAIT="-300";
+INITIAL_WAIT="60";
+POST_WAIT="16800";
 DEBUG_LEVEL="2";
 # Supply an output directory for all logs / error files from clients and servers
-outputdir="chill_test";
+today=`date +"%F_%T_%Z" | sed "s/[-:]/_/g"`;
+outputdir="day_monitor/${today}";
 # Automatically make a subdirectory to prevent clobbering repeated runs (0=True, 1=False)
-unique_subdir=0;
+unique_subdir=1;
 # Infinite loop the command (0=True, 1=False)
-infinite_loop=1;
+infinite_loop=0;
 
 # Pair the server name and IP (name used for SSH-command launching, IP given to all clients)"
 server_list=( "deepgreen" );
