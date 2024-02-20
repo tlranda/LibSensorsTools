@@ -24,6 +24,8 @@ def build():
     filters.add_argument("--req-temperature-variance", action="store_false",
                      help="Temperature senses with zero standard deviation will be plotted (default: %(default)s)")
     plotting = prs.add_argument_group("Plotting Controls")
+    plotting.add_argument("--only-regex", default=None, nargs="*",
+                     help="Only plot temperatures that match these regexes (default: .*)")
     plotting.add_argument("--regex-temperatures", default=None, nargs="*",
                      help="Group temperatures that match each given regex (default: all temperatures)")
     plotting.add_argument("--independent-y-scaling", action="store_true",
@@ -44,6 +46,8 @@ def parse(args=None, prs=None):
             inputs.append(i)
         else:
             print(f"Could not find {i} -- omitting")
+    if args.only_regex is None:
+        args.only_regex = []
     if args.regex_temperatures is None:
         args.regex_temperatures = []
     args.inputs = inputs
@@ -79,6 +83,10 @@ def get_temps_and_traces(args):
                     # Find all fields we'll track and attach it
                     tracked = [field for field in record if 'temperature' in field]
                     for field in tracked:
+                        # Only load fields that match a regex when --only-regex is given
+                        if len(args.only_regex) > 0:
+                            if not any((re.match(expr, field) for expr in args.only_regex)):
+                                continue
                         if field in jtemps:
                             jtemps[field].append(record[field])
                         else:
@@ -98,6 +106,9 @@ def get_temps_and_traces(args):
             data = pd.read_csv(i)
             print(f"Loaded CSV {i}")
             temp_cols = [_ for _ in data.columns if 'temperature' in _]
+            # Only load fields that match a regex when --only-regex is given
+            if len(args.only_regex) > 0:
+                temp_cols = [_ for _ in temp_cols if any((re.match(expr, _) for expr in args.only_regex))]
             for col in temp_cols:
                 temps.append(temperatureData(data[col], data['timestamp'], f"{i.name} {col}"))
             print(f"Loaded {sum([len(t.data) for t in temps[prev_temp_len:]])} temperature records ({len(temp_cols)} fields)")
@@ -152,6 +163,9 @@ def main(args=None):
         ymax[ax_id] = max(ymax[ax_id], local_ymax)
         ax.set_xlabel('Time (seconds)')
         ax.set_ylabel('Temperature (degrees Celsius)')
+        ax.yaxis.set_minor_locator(matplotlib.ticker.AutoMinorLocator(5))
+        ax.grid(True, which='minor', linestyle='--', axis='y', color='lightgray')
+        ax.grid(True, which='major', linestyle='-', axis='y')
     for idx, ax in enumerate(axs):
         if not args.independent_y_scaling:
             ax.set_ylim(min(ymin)*0.95, max(ymax)*1.05)
