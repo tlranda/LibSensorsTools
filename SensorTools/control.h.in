@@ -81,7 +81,7 @@ private:
     char fname[NAME_BUFFER_SIZE];
 
     bool detectSudo(void);
-    bool openFile(const char* openName);
+    bool openFile(const char* openName, bool exists_ok);
     void closeFile(void);
 public:
     Output(void);
@@ -97,8 +97,8 @@ public:
     bool is_custom();
     // Safely close any existing file (except std::cout/std::cerr) and redirect this reference to a given filename
     // Falls back to std descriptor if the file cannot be opened
-    void redirect(const char* fname);
-    void redirect(std::filesystem::path fpath);
+    bool redirect(const char* fname, bool exists_ok);
+    bool redirect(std::filesystem::path fpath, bool exists_ok);
     // Safely close any existing file (except std::cout/std::cerr) and return output to std descriptor
     void revert();
 };

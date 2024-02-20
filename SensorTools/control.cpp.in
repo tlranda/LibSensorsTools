@@ -92,9 +92,13 @@ void Output::closeFile(void) {
     if (fileStream.is_open() && is_custom()) fileStream.close();
     std::memset(fname, 0, NAME_BUFFER_SIZE);
 }
-bool Output::openFile(const char * openName) {
+bool Output::openFile(const char * openName, bool exists_ok = true) {
     std::lock_guard<std::mutex> lock(fileMutex);
     closeFile();
+    if (!exists_ok && std::filesystem::exists(openName)) {
+        std::cerr << "File '" << openName << "' already exists!" << std::endl;
+        return false;
+    }
     fileStream.open(openName, std::ios::out | std::ios::app);
     if (fileStream.is_open()) {
         if (detectedAsSudo && (chown(openName, sudo_uid, sudo_gid) == -1))
@@ -115,14 +119,16 @@ void Output::revert(void) {
     if (defaultToCout) buffer.changeStream(std::cout);
     else buffer.changeStream(std::cerr);
 }
-void Output::redirect(const char * openName) {
-    if (openFile(openName)) buffer.changeStream(fileStream);
+bool Output::redirect(const char * openName, bool exists_ok=true) {
+    if (openFile(openName,exists_ok)) buffer.changeStream(fileStream);
     else {
         std::cerr << "Failed to redirect to file '" << openName << "'" << std::endl;
         revert();
+        return false;
     }
+    return true;
 }
-void Output::redirect(std::filesystem::path fpath) { redirect(fpath.string().c_str()); }
+bool Output::redirect(std::filesystem::path fpath, bool exists_ok=true) { return redirect(fpath.string().c_str(),exists_ok); }
 
 
 /*
@@ -298,11 +304,11 @@ void parse(int argc, char** argv) {
                 break;
             case 'l':
                 args.log_path = std::filesystem::path(optarg);
-                args.log.redirect(args.log_path);
+                if (!args.log.redirect(args.log_path, false)) exit(EXIT_FAILURE);
                 break;
             case 'L':
                 args.error_log_path = std::filesystem::path(optarg);
-                args.error_log.redirect(args.error_log_path);
+                if (!args.error_log.redirect(args.error_log_path, false)) exit(EXIT_FAILURE);
                 break;
             case 'p':
                 args.poll = atof(optarg);

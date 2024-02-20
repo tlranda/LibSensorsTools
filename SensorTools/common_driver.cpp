@@ -25,21 +25,26 @@ int main(int argc, char** argv) {
 void init_libsensorstools(int argc, char** argv) {
     t_minus_one = std::chrono::system_clock::now();
 
+    // Command line argument parsing
+    parse(argc, argv);
+
     // Library initializations
     #ifdef BUILD_CPU
-    int error = sensors_init(NULL);
-    if (error != 0) {
-        args.error_log << "LibSensors library did not initialize properly! Aborting..." << std::endl;
-        exit(EXIT_FAILURE);
+    if (args.cpu) {
+        int error = sensors_init(NULL);
+        if (error != 0) {
+            args.error_log << "LibSensors library did not initialize properly! Aborting..." << std::endl;
+            exit(EXIT_FAILURE);
+        }
     }
     #endif
     #ifdef BUILD_GPU
         #ifdef GPU_ENABLED
-        nvmlInit();
+        if (args.gpu) nvmlInit();
         #endif
     #endif
     #ifdef BUILD_POD
-    curl_global_init(CURL_GLOBAL_ALL);
+    if (args.submer) curl_global_init(CURL_GLOBAL_ALL);
     #endif
 
     // Prepare for graceful shutdown via CTRL+C and other common signals
@@ -52,8 +57,6 @@ void init_libsensorstools(int argc, char** argv) {
     sigaction(SIGTERM, &sigHandler, NULL);
     // SIGKILL and SIGSTOP cannot be caught, blocked or ignored -- nor should they
 
-    // Command line argument parsing
-    parse(argc, argv);
     if (args.debug >= DebugVerbose) args.error_log << "The program lives" << std::endl;
     if (args.format == OutputJSON) {
         args.log << "[" << std::endl;
@@ -355,7 +358,20 @@ void print_csv_header() {
     if (args.submer) {
         for (std::vector<std::unique_ptr<submer_cache>>::iterator i = known_submers.begin(); i != known_submers.end(); i++) {
             submer_cache* j = i->get();
-            args.log << ",submer_" << j->index, "_temperature";
+            args.log << ",submer_" << j->index << "_temperature"
+            << ",submer_" << j->index << "_consumption"
+            << ",submer_" << j->index << "_dissipation"
+            << ",submer_" << j->index << "_dissipationC"
+            << ",submer_" << j->index << "_dissipationW"
+            << ",submer_" << j->index << "_mPUE"
+            << ",submer_" << j->index << "_pump1rpm"
+            << ",submer_" << j->index << "_pump2rpm"
+            << ",submer_" << j->index << "_cti"
+            << ",submer_" << j->index << "_cto"
+            << ",submer_" << j->index << "_cf"
+            << ",submer_" << j->index << "_wti"
+            << ",submer_" << j->index << "_wto"
+            << ",submer_" << j->index << "_wf";
         }
     }
     #endif

@@ -87,13 +87,52 @@ int update_submers(void) {
         if (args.debug >= DebugVerbose || update) {
             switch (args.format) {
                 case OutputCSV:
-                    args.log << "," << j->json_data["temperature"];
+                    args.log << "," << j->json_data["temperature"]
+                    << "," << j->json_data["consumption"]
+                    << "," << j->json_data["dissipation"]
+                    << "," << j->json_data["dissipationC"]
+                    << "," << j->json_data["dissipationW"]
+                    << "," << j->json_data["mpue"]
+                    << "," << j->json_data["pump1rpm"]
+                    << "," << j->json_data["pump2rpm"]
+                    << "," << j->json_data["cti"]
+                    << "," << j->json_data["cto"]
+                    << "," << j->json_data["cf"]
+                    << "," << j->json_data["wti"]
+                    << "," << j->json_data["wto"]
+                    << "," << j->json_data["wf"];
                     break;
                 case OutputHuman:
-                    args.log << "Submer Temperature: " << j->json_data["temperature"] << std::endl;
+                    args.log << "Submer Temperature: " << j->json_data["temperature"] << std::endl
+                    << "Submer Consumption: " << j->json_data["consumption"] << std::endl
+                    << "Submer Dissipation: " << j->json_data["dissipation"] << std::endl
+                    << "Submer DissipationC: " << j->json_data["dissipationC"] << std::endl
+                    << "Submer DissipationW: " << j->json_data["dissipationW"] << std::endl
+                    << "Submer mPUE: " << j->json_data["mpue"] << std::endl
+                    << "Submer Pump 1 RPM: " << j->json_data["pump1rpm"] << std::endl
+                    << "Submer Pump 2 RPM: " << j->json_data["pump2rpm"] << std::endl
+                    << "Submer CTI: " << j->json_data["cti"] << std::endl
+                    << "Submer CTO: " << j->json_data["cto"] << std::endl
+                    << "Submer CF: " << j->json_data["cf"] << std::endl
+                    << "Submer WTI: " << j->json_data["wti"] << std::endl
+                    << "Submer WTO: " << j->json_data["wto"] << std::endl
+                    << "Submer WF: " << j->json_data["wf"] << std::endl;
                     break;
                 case OutputJSON:
-                    args.log << "\t\"submer-" << j->index << "-temperature\": " << j->json_data["temperature"] << "," << std::endl;
+                    args.log << "\t\"submer-" << j->index << "-temperature\": " << j->json_data["temperature"] << "," << std::endl
+                    << "\t\"submer-" << j->index << "-consumption\": " << j->json_data["consumption"] << "," << std::endl
+                    << "\t\"submer-" << j->index << "-dissipation\": " << j->json_data["dissipation"] << "," << std::endl
+                    << "\t\"submer-" << j->index << "-dissipationC\": " << j->json_data["dissipationC"] << "," << std::endl
+                    << "\t\"submer-" << j->index << "-dissipationW\": " << j->json_data["dissipationW"] << "," << std::endl
+                    << "\t\"submer-" << j->index << "-mPUE\": " << j->json_data["mpue"] << "," << std::endl
+                    << "\t\"submer-" << j->index << "-pump1rpm\": " << j->json_data["pump1rpm"] << "," << std::endl
+                    << "\t\"submer-" << j->index << "-pump2rpm\": " << j->json_data["pump2rpm"] << "," << std::endl
+                    << "\t\"submer-" << j->index << "-cti\": " << j->json_data["cti"] << "," << std::endl
+                    << "\t\"submer-" << j->index << "-cto\": " << j->json_data["cto"] << "," << std::endl
+                    << "\t\"submer-" << j->index << "-cf\": " << j->json_data["cf"] << "," << std::endl
+                    << "\t\"submer-" << j->index << "-wti\": " << j->json_data["wti"] << "," << std::endl
+                    << "\t\"submer-" << j->index << "-wto\": " << j->json_data["wto"] << "," << std::endl
+                    << "\t\"submer-" << j->index << "-wf\": " << j->json_data["wf"] << "," << std::endl;
                     break;
             }
         }
