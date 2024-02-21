@@ -22,7 +22,7 @@
 #endif
 
 #include <vector> // Vector type
-#include "control.h" // Debug levels, arguments, Output class
+#include "io/argparse_libsensors.h" // Debug levels, arguments, Output class
 // End Headers
 
 

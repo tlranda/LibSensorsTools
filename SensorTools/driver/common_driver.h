@@ -1,17 +1,18 @@
 #cmakedefine BUILD_CPU
 #cmakedefine BUILD_GPU
-#cmakedefine BUILD_POD
+#cmakedefine BUILD_SUBMER
 #cmakedefine BUILD_NVME
 #cmakedefine SERVER_MAIN
 // Headers and why they're included
 // Document necessary compiler flags as needed in full-line comment below the header
 #ifdef SERVER_MAIN
-#include "control_server.h" // Common headers, IO control
+#include "../io/argparse_server.h" // Common headers, IO control
+
 #include <netinet/in.h> // Define sockaddr_in struct and options
 #include <sys/select.h> // FD_[SET|ISSET|ZERO], time-based structs
 #include <sys/time.h> // Other time-based structs, may import the key things from select.h
 #else
-#include "control.h" // Common headers, IO control
+#include "../io/argparse_libsensors.h" // Common headers, IO control
 #endif
 
 #include <iomanip> // setw and setprecision
@@ -22,18 +23,19 @@
 #include <sys/wait.h> // fork()
 #include <arpa/inet.h> // Make network strings (IP addr, etc) for debug/logging
 #include <sys/socket.h> // Socket datatypes, socket operations
+#include <nlohmann/json.hpp> // JSON data type
 
 #ifdef BUILD_CPU
-#include "cpu_tools.h"
+#include "../tools/cpu/cpu_tools.h"
 #endif
 #ifdef BUILD_GPU
-#include "gpu_tools.h"
+#include "../tools/gpu/gpu_tools.h"
 #endif
-#ifdef BUILD_POD
-#include "submer_tools.h"
+#ifdef BUILD_SUBMER
+#include "../tools/submer/submer_tools.h"
 #endif
 #ifdef BUILD_NVME
-#include "nvme_tools.h"
+#include "../tools/nvme/nvme_tools.h"
 #endif
 
 // End Headers

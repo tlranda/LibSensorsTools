@@ -3,7 +3,7 @@
 #include <vector> // vector type and operations
 #include <libnvme.h> // Read NVME device temperatures
 // Must compile with: -lnvme
-#include "control.h" // Debug levels, arguments, Output class
+#include "io/argparse_libsensors.h" // Debug levels, arguments, Output class
 // End Headers
 
 

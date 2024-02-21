@@ -1,0 +1,33 @@
+{
+"meta":[],
+"data":{
+    "temperature":20.5,
+    "setpoint":45,
+    "consumption":50,
+    "dissipation":0,
+    "dissipationC":0,
+    "dissipationW":0,
+    "mpue":1,
+    "pump1status":0,
+    "pump1rpm":0,
+    "pump2status":0,
+    "pump2rpm":0,
+    "cti":18.1,
+    "cto":16,
+    "cf":0,
+    "wti":9.4,
+    "wto":9.2,
+    "wf":4.7,
+    "alarm":55,
+    "cpu0temp":59,
+    "cpu1temp":59,
+    "errors":[],
+    "warnings":[],
+    "mode":"normal",
+    "test":null,
+    "maintenance":null,
+    "demo":false,
+    "factory":false
+    }
+}
+

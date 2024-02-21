@@ -1,6 +1,6 @@
 #cmakedefine BUILD_CPU
 #cmakedefine BUILD_GPU
-#cmakedefine BUILD_POD
+#cmakedefine BUILD_SUBMER
 #cmakedefine BUILD_NVME
 #cmakedefine SERVER_MAIN
 #ifdef SERVER_MAIN
@@ -43,7 +43,7 @@ void init_libsensorstools(int argc, char** argv) {
         if (args.gpu) nvmlInit();
         #endif
     #endif
-    #ifdef BUILD_POD
+    #ifdef BUILD_SUBMER
     if (args.submer) curl_global_init(CURL_GLOBAL_ALL);
     #endif
 
@@ -68,7 +68,7 @@ void init_libsensorstools(int argc, char** argv) {
                     #ifdef BUILD_GPU
                     "\t\"gpu\": " << args.gpu << "," << std::endl <<
                     #endif
-                    #ifdef BUILD_POD
+                    #ifdef BUILD_SUBMER
                     "\t\"submer\": " << args.submer << "," << std::endl <<
                     #endif
                     #ifdef BUILD_NVME
@@ -108,7 +108,7 @@ void init_libsensorstools(int argc, char** argv) {
         #ifdef BUILD_GPU
         "GPU: " << args.gpu << std::endl <<
         #endif
-        #ifdef BUILD_POD
+        #ifdef BUILD_SUBMER
         "Submer: " << args.submer << std::endl <<
         #endif
         #ifdef BUILD_NVME
@@ -164,7 +164,7 @@ void init_libsensorstools(int argc, char** argv) {
                         "\t\"NVIDIA Driver\": \"" << NVML_DRIVER_VERSION << "\"," << std::endl;
             #endif
         #endif
-        #ifdef BUILD_POD
+        #ifdef BUILD_SUBMER
         args.log << "\t\"LibCurl\": \"" << curl_version() << "\"," << std::endl;
         #endif
         #ifdef BUILD_NVME
@@ -190,7 +190,7 @@ void init_libsensorstools(int argc, char** argv) {
                               "Using NVML Driver v" << NVML_DRIVER_VERSION << std::endl;
             #endif
         #endif
-        #ifdef BUILD_POD
+        #ifdef BUILD_SUBMER
         args.error_log << "LibCurl v" << curl_version() << std::endl;
         #endif
         #ifdef BUILD_NVME
@@ -211,7 +211,7 @@ void init_libsensorstools(int argc, char** argv) {
     #ifdef BUILD_GPU
     cache_gpus();
     #endif
-    #ifdef BUILD_POD
+    #ifdef BUILD_SUBMER
     cache_submers();
     #endif
     #ifdef BUILD_NVME
@@ -354,7 +354,7 @@ void print_csv_header() {
         }
     }
     #endif
-    #ifdef BUILD_POD
+    #ifdef BUILD_SUBMER
     if (args.submer) {
         for (std::vector<std::unique_ptr<submer_cache>>::iterator i = known_submers.begin(); i != known_submers.end(); i++) {
             submer_cache* j = i->get();
@@ -403,7 +403,7 @@ void shutdown(int signal = 0) {
         nvmlShutdown();
         #endif
     #endif
-    #ifdef BUILD_POD
+    #ifdef BUILD_SUBMER
     curl_global_cleanup();
     #endif
     #ifdef SERVER_MAIN
@@ -454,7 +454,7 @@ int poll_cycle(std::chrono::time_point<std::chrono::system_clock> t0) {
         //satisfied += update_gpus();
     }
     #endif
-    #ifdef BUILD_POD
+    #ifdef BUILD_SUBMER
     if (args.submer) {
         int update = update_submers();
         if (args.debug >= DebugVerbose) args.error_log << "Pods have " << update << " / " << submers_to_satisfy << " satisfied temperatures" << std::endl;
@@ -515,7 +515,7 @@ void main_loop() {
     #ifdef BUILD_GPU
     n_to_satisfy += gpus_to_satisfy;
     #endif
-    #ifdef BUILD_POD
+    #ifdef BUILD_SUBMER
     n_to_satisfy += submers_to_satisfy;
     #endif
     #ifdef BUILD_NVME
@@ -636,7 +636,7 @@ void set_initial_temperatures() {
         for (std::vector<gpu_cache>::iterator i = known_gpus.begin(); i != known_gpus.end(); i++)
             i->gpu_initialTemperature = i->gpu_temperature;
     #endif
-    #ifdef BUILD_POD
+    #ifdef BUILD_SUBMER
     if (args.submer)
         for (std::vector<std::unique_ptr<submer_cache>>::iterator i = known_submers.begin(); i != known_submers.end(); i++) {
             submer_cache* j = i->get();

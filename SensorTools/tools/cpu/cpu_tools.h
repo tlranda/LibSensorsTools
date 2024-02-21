@@ -9,7 +9,7 @@
 #include <string> // string data type
 #include <filesystem> // filesystem types
 // May require on some systems: -lstdc++fs
-#include "control.h" // Debug levels, arguments, Output class
+#include "io/argparse_libsensors.h" // Debug levels, arguments, Output class
 // End Headers
 
 

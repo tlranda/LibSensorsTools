@@ -4,7 +4,8 @@
 // Must compile with: -lcurl
 #include "submer_api.h"
 // Defines symbol SUBMER_URL as the http API URL for the monitor's JSON
-#include "control.h" // Debug levels, arguments, Output class
+#include "io/argparse_libsensors.h" // Debug levels, arguments, Output class
+#include <nlohmann/json.hpp> // JSON parsing
 //End Headers
 
 // Class and Type declarations

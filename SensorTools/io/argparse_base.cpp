@@ -1,135 +1,10 @@
 #cmakedefine SERVER_MAIN
+
 #ifdef SERVER_MAIN
-#include "control_server.h"
+#include "argparse_server.h"
 #else
-#include "control.h"
+#include "argparse_libsensors.h"
 #endif
-
-TimestampStringBuf::TimestampStringBuf(void) :
-                    timestamped(false),
-                    output(&std::cout) {}
-TimestampStringBuf::TimestampStringBuf(std::ostream& stream, bool timestamped = false) :
-                    timestamped(timestamped),
-                    output(&stream) {}
-TimestampStringBuf::~TimestampStringBuf(void) {
-    // Destructor cannot call virtual methods, ensure final flush always occurs
-    if (pbase() != pptr()) putOutput();
-}
-int TimestampStringBuf::sync(void) {
-    putOutput();
-    return 0;
-}
-void TimestampStringBuf::putOutput() {
-    // Output the timestamp
-    if (timestamped) {
-        std::chrono::time_point<std::chrono::system_clock> currentTimePoint =
-                std::chrono::system_clock::now();
-        std::chrono::duration<long int, std::ratio<1,1'000'000'000> > ns =
-                std::chrono::duration_cast<std::chrono::nanoseconds>(currentTimePoint.time_since_epoch()) % 1'000'000'000;
-        std::time_t current_time =
-                std::chrono::system_clock::to_time_t(currentTimePoint);
-        std::tm* localTime = std::localtime(&current_time);
-        (*output) << std::put_time(localTime, "[%F %T.")
-                  << std::setfill('0') << std::setw(9) << ns.count() << "] ";
-    }
-    // Output the buffer and reset it
-    (*output) << str();
-    str("");
-    // Flush the output stream
-    output->flush();
-}
-std::ostream* TimestampStringBuf::getOutput() const {
-    return output;
-}
-void TimestampStringBuf::changeStream(std::ostream& changedStream) {
-    output = &changedStream;
-}
-
-Output::Output(void) : std::ostream(&buffer),
-                       buffer(std::cout, false),
-                       defaultToCout(true),
-                       detectedAsSudo(detectSudo()) {}
-Output::Output(std::ostream& stream, bool timestamped = false) :
-                       std::ostream(&buffer),
-                       buffer(stream, timestamped),
-                       defaultToCout(true),
-                       detectedAsSudo(detectSudo()) {}
-Output::Output(bool isCout, bool timestamped = false) :
-                       std::ostream(&buffer),
-                       buffer((isCout) ? std::cout : std::cerr, timestamped),
-                       defaultToCout(isCout),
-                       detectedAsSudo(detectSudo()) {}
-Output::~Output(void) {
-    // While current implementation has I/O access separated by processes,
-    // it could become multithreaded at some point. Even though I expect
-    // destructors and file selection to remain single-thread operations,
-    // better to be a bit cautious now at negligible performance cost
-    // than to forget this later and suffer
-    std::lock_guard<std::mutex> lock(fileMutex);
-    closeFile();
-}
-bool Output::detectSudo(void) {
-    const char* sudo_uid_str = getenv("SUDO_UID"),
-              * sudo_gid_str = getenv("SUDO_GID");
-    if (sudo_uid_str && sudo_gid_str) {
-        sudo_uid = static_cast<uid_t>(std::stoi(sudo_uid_str));
-        sudo_gid = static_cast<gid_t>(std::stoi(sudo_gid_str));
-        return true;
-    }
-    return false;
-}
-// Operator overload here is ONLY to permit RHS operation, leave LHS alone
-std::ostream& operator<<(std::ostream& os, Output& obj) {
-    os << "Output[";
-    if (obj.fname[0]) os << obj.fname << (obj.detectedAsSudo ? "; access mode: SUDO" : "; access mode: USER");
-    else if (obj.is_cout()) os << "std::cout";
-    else if (obj.is_cerr()) os << "std::cerr";
-    else throw std::runtime_error("Lost track of filename, not std::cout or std::cerr");
-    os << "]";
-    return os;
-}
-void Output::closeFile(void) {
-    if (fileStream.is_open() && is_custom()) fileStream.close();
-    std::memset(fname, 0, NAME_BUFFER_SIZE);
-}
-bool Output::openFile(const char * openName, bool exists_ok = true) {
-    std::lock_guard<std::mutex> lock(fileMutex);
-    closeFile();
-    if (!exists_ok && std::filesystem::exists(openName)) {
-        std::cerr << "File '" << openName << "' already exists!" << std::endl;
-        return false;
-    }
-    fileStream.open(openName, std::ios::out | std::ios::app);
-    if (fileStream.is_open()) {
-        if (detectedAsSudo && (chown(openName, sudo_uid, sudo_gid) == -1))
-            std::cerr << "Failed to change ownership of file '" << openName <<"', will be owned by root" << std::endl;
-        std::strncpy(fname, openName, NAME_BUFFER_SIZE);
-        return true;
-    }
-    else {
-        std::cerr << "Failed to open file '" << openName << "'" << std::endl;
-        return false;
-    }
-}
-bool Output::is_cout() { return buffer.getOutput() == &std::cout; }
-bool Output::is_cerr() { return buffer.getOutput() == &std::cerr; }
-bool Output::is_custom() { return (buffer.getOutput() != &std::cout) && (buffer.getOutput() != &std::cerr); }
-void Output::revert(void) {
-    closeFile();
-    if (defaultToCout) buffer.changeStream(std::cout);
-    else buffer.changeStream(std::cerr);
-}
-bool Output::redirect(const char * openName, bool exists_ok=true) {
-    if (openFile(openName,exists_ok)) buffer.changeStream(fileStream);
-    else {
-        std::cerr << "Failed to redirect to file '" << openName << "'" << std::endl;
-        revert();
-        return false;
-    }
-    return true;
-}
-bool Output::redirect(std::filesystem::path fpath, bool exists_ok=true) { return redirect(fpath.string().c_str(),exists_ok); }
-
 
 /*
    Read command line and parse arguments
@@ -149,7 +24,7 @@ void parse(int argc, char** argv) {
             #ifdef BUILD_GPU
             {"gpu", no_argument, 0, 'g'},
             #endif
-            #ifdef BUILD_POD
+            #ifdef BUILD_SUBMER
             {"submer", no_argument, 0, 's'},
             #endif
             #ifdef BUILD_NVME
@@ -179,7 +54,7 @@ void parse(int argc, char** argv) {
         #ifdef BUILD_GPU
         "g"
         #endif
-        #ifdef BUILD_POD
+        #ifdef BUILD_SUBMER
         "s"
         #endif
         #ifdef BUILD_NVME
@@ -217,7 +92,7 @@ void parse(int argc, char** argv) {
                     std::cout << "\t-g | --gpu\n\t\t" <<
                                  "Query GPU stats only (default: GPU and CPU)" << std::endl;
                     #endif
-                    #ifdef BUILD_POD
+                    #ifdef BUILD_SUBMER
                     std::cout << "\t-s | --submer\n\t\t" <<
                                  "Query Submer Pod stats (default: Not queried)" << std::endl;
                     #endif
@@ -272,7 +147,7 @@ void parse(int argc, char** argv) {
                     args.gpu = true;
                     break;
                 #endif
-                #ifdef BUILD_POD
+                #ifdef BUILD_SUBMER
                 case 's':
                     args.submer = true;
                     break;
@@ -381,9 +256,6 @@ void parse(int argc, char** argv) {
 
     if (bad_args > 0) exit(EXIT_FAILURE);
 }
-
-
-
 
 // Definition of external variables for IO tools
 arguments args;
