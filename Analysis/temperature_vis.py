@@ -167,9 +167,9 @@ def main(args=None):
         ax.grid(True, which='minor', linestyle='--', axis='y', color='lightgray')
         ax.grid(True, which='major', linestyle='-', axis='y')
     for idx, ax in enumerate(axs):
-        if not args.independent_y_scaling:
+        if not args.independent_y_scaling and (np.isfinite(min(ymin)) and np.isfinite(max(ymax))):
             ax.set_ylim(min(ymin)*0.95, max(ymax)*1.05)
-        else:
+        elif (np.isfinite(ymin[idx]) and np.isfinite(ymax[idx])):
             ax.set_ylim(ymin[idx]*0.95, ymax[idx]*1.05)
         for trace in traces:
             ax.vlines(trace.timestamp, 0, 1, transform=ax.get_xaxis_transform(), label=trace.label)
