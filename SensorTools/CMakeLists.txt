@@ -63,7 +63,7 @@ endif(BUILD_NVME)
 # Common compile options and linked libraries
 set(COMMON_OPTIONS -march=native -O3)
 set(COMMON_LIBRARIES m stdc++fs)
-set(COMMON_INCLUDE_DIRS ../../submodules/nlohmann_json/single_include .)
+set(COMMON_INCLUDE_DIRS ../submodules/nlohmann_json/single_include .)
 add_library(CommonSettings INTERFACE)
 target_compile_options(CommonSettings INTERFACE ${COMMON_OPTIONS})
 target_link_libraries(CommonSettings INTERFACE ${COMMON_LIBRARIES})
