@@ -90,10 +90,10 @@ for ((idx=0; idx < ${#server_ip[@]}; ++idx)); do
         insane=1;
     fi
     # Server program exists
-    server_exe="${path_to_git_repo}/SensorTools/${server_list[$idx]}_build/release/${server_list[$idx]}_sensors_server";
+    server_exe="${path_to_git_repo}/SensorTools/build_${server_list[$idx]}/release/${server_list[$idx]}_sensors_server";
     if [[ ! -f ${server_exe} || ! -x ${server_exe} ]]; then
         echo "Server executable for ${server_list[$idx]} not found or not executable!";
-        echo "Ensure you have built the CMake release version under the directory ${path_to_git_repo}/SensorTools/${server_list[$idx]}_build";
+        echo "Ensure you have built the CMake release version under the directory ${path_to_git_repo}/SensorTools/build_${server_list[$idx]}";
         insane=1;
     else
         server_programs=( ${server_programs[@]} ${server_exe} );
@@ -103,10 +103,10 @@ done;
 client_programs=( );
 for ((idx=0; idx < ${#client_list[@]}; ++idx)); do
     # Server program exists
-    client_exe="${path_to_git_repo}/SensorTools/${client_list[$idx]}_build/release/${client_list[$idx]}_sensors";
+    client_exe="${path_to_git_repo}/SensorTools/build_${client_list[$idx]}/release/${client_list[$idx]}_sensors";
     if [[ ! -f ${client_exe} || ! -x ${client_exe} ]]; then
         echo "Client executable for ${client_list[$idx]} not found or not executable!";
-        echo "Ensure you have built the CMake release version under the directory ${path_to_git_repo}/SensorTools/${client_list[$idx]}_build";
+        echo "Ensure you have built the CMake release version under the directory ${path_to_git_repo}/SensorTools/build_${client_list[$idx]}";
         insane=1;
     else
         client_programs=( ${client_programs[@]} ${client_exe} );
