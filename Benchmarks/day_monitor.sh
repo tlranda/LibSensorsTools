@@ -14,13 +14,13 @@ path_to_git_repo=`git rev-parse --show-toplevel`;
 execution_mode=$(( $# > 0 ));
 
 # Command to launch from server nodes
-bench_command="${path_to_git_repo}/Benchmarks/./sleep_counter.sh 86400";
-#bench_command="${path_to_git_repo}/Benchmarks/./multiGPU_Stream.sh";
+#bench_command="${path_to_git_repo}/Benchmarks/./sleep_counter.sh 4";
+bench_command="${path_to_git_repo}/Benchmarks/./multiGPU_Stream.sh";
 # Arguments to control the sensing processes
 FORMAT="2";
 POLL="1";
-INITIAL_WAIT="60";
-POST_WAIT="16800";
+INITIAL_WAIT="1800"; # Half an hour
+POST_WAIT="86400"; # 24 hours
 DEBUG_LEVEL="2";
 # Supply an output directory for all logs / error files from clients and servers
 today=`date +"%F_%T_%Z" | sed "s/[-:]/_/g"`;

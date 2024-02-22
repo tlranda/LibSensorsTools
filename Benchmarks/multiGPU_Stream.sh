@@ -8,8 +8,9 @@ profiling="";
 stream_bench="/home/share/benchmarks/stream/cuda-stream";
 if [[ ${#profiling} -gt 0 ]]; then
     #stream_args="-s 1024 -n 2";
-    # ^^ Expected ~1 second per iteration w/o profiling
+    # Expect ~1 second per iteration w/o profiling
     stream_args="-s 400000000 -n 2";
+    # Minimum value for -n is 2, use same -s value for similar kernel performance
     # Expect 4.5-10 minutes per iteration WITH profiling
 else
     stream_args="-s 400000000 -n 1000";
