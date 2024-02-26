@@ -37,7 +37,7 @@ for d in `nvidia-smi -L | awk '{print $2}' | tr -d ':'`; do
 done;
 # Iterate them n_times
 for (( i=0; i<${n_times}; ++i )); do
-    date +"%F %T %Z";
+    date +"%F %T.%N %Z";
     old_IFS="${IFS}";
     IFS="^";
     for cmd in ${composed[@]}; do
@@ -47,5 +47,5 @@ for (( i=0; i<${n_times}; ++i )); do
     wait;
     IFS="${old_IFS}";
 done;
-date +"%F %T %Z";
+date +"%F %T.%N %Z";
 

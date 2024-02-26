@@ -156,7 +156,7 @@ fi
 echo "Logging results to: ${outputdir}";
 
 # Record experiment start date
-start_timestamp=`date +"%F %T %Z"`;
+start_timestamp=`date +"%F %T.%N %Z"`;
 echo "Start timestamp: ${start_timestamp}";
 # Modify the experiment for infinite looping
 if [[ ${infinite_loop} -eq 0 ]]; then
@@ -213,6 +213,8 @@ done;
 
 # Ensure all started processes finish
 wait;
+end_timestamp=`date +"%F %T.%N %Z"`;
+echo "End timestamp: ${end_timestamp}";
 
 # Perform initial analysis with reasonable defaults
 analysis_call="python3 ../Analysis/temperature_vis.py --inputs ${outputdir}/*_client.${EXTENSION} --output ${outputdir}/temp_analysis.png --min-trace-diff 1 --min-temp-enforce 0 --max-temp-enforce 100 --regex-temperatures cpu gpu --independent-y-scaling --title \"${start_timestamp}\"";
