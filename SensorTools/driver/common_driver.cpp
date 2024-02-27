@@ -57,7 +57,8 @@ void init_libsensorstools(int argc, char** argv) {
     sigaction(SIGTERM, &sigHandler, NULL);
     // SIGKILL and SIGSTOP cannot be caught, blocked or ignored -- nor should they
 
-    if (args.debug >= DebugVerbose) args.error_log << "The program lives" << std::endl;
+    // !! Error-log uses this message as a timestamp synchronization point. It should not be guarded by debug level! !!
+    args.error_log << "The program lives" << std::endl;
     if (args.format == OutputJSON) {
         args.log << "[" << std::endl;
         args.log << "{\"arguments\": { " << std::endl <<
@@ -394,7 +395,8 @@ void shutdown(int signal = 0) {
     }
     else
         args.error_log << "@@Shutdown at " << std::chrono::duration_cast<std::chrono::nanoseconds>(t0-t_minus_one).count() / 1e9 << "s" << std::endl;
-    if (args.debug >= DebugMinimal) args.error_log << "Run shutdown with signal " << signal << std::endl;
+    // !! Error-log uses these messages as a timestamp synchronization point. It should not be guarded by debug level! !!
+    args.error_log << "Run shutdown with signal " << signal << std::endl;
     #ifdef BUILD_CPU
     sensors_cleanup();
     #endif
@@ -502,24 +504,10 @@ void main_loop() {
 
     #ifdef SERVER_MAIN
     // All clients connected, notify them to start polling
-    if (args.debug >= DebugVerbose) args.error_log << "Server sends 'START' message to all clients" << std::endl;
+    // !! Error-log uses this message as a timestamp synchronization point. It should not be guarded by debug level! !!
+    args.error_log << "Server sends 'START' message to all clients" << std::endl;
     char clientMsgBuffer[NAME_BUFFER_SIZE] = "START";
     for (std::vector<int>::iterator it = client_sockets.begin(); it != client_sockets.end(); it++) send(*it, clientMsgBuffer, NAME_BUFFER_SIZE, 0);
-    #endif
-
-    // Prepare count of sensors to re-satisfy for early-exit
-    int poll_result, n_to_satisfy = 0;
-    #ifdef BUILD_CPU
-    n_to_satisfy += cpus_to_satisfy;
-    #endif
-    #ifdef BUILD_GPU
-    n_to_satisfy += gpus_to_satisfy;
-    #endif
-    #ifdef BUILD_SUBMER
-    n_to_satisfy += submers_to_satisfy;
-    #endif
-    #ifdef BUILD_NVME
-    n_to_satisfy += nvme_to_satisfy;
     #endif
 
     // Decide what kind of execution is necessary
@@ -528,11 +516,12 @@ void main_loop() {
     else
     #endif
     if (args.wrapped == nullptr) simple_poll_cycle_loop();
-    else fork_join_loop(n_to_satisfy);
+    else fork_join_loop();
 
     #ifdef SERVER_MAIN
     // Shut down all clients
-    if (args.debug >= DebugVerbose) args.error_log << "Server sends 'STOP' message to all clients" << std::endl;
+    // !! Error-log uses this message as a timestamp synchronization point. It should not be guarded by debug level! !!
+    args.error_log << "Server sends 'STOP' message to all clients" << std::endl;
     strncpy(clientMsgBuffer, "STOP", 4);
     clientMsgBuffer[4] = '\0';
     for (std::vector<int>::iterator it = client_sockets.begin(); it != client_sockets.end(); it++) send(*it, clientMsgBuffer, NAME_BUFFER_SIZE, 0);
@@ -549,6 +538,7 @@ void main_loop() {
 
 #ifndef SERVER_MAIN
 void client_connect_loop() {
+    // !! Error-log uses this message as a timestamp synchronization point. It should not be guarded by debug level! !!
     args.error_log << "Client process attempts to connect to server at " << args.ip_addr << std::endl;
     // We will connect to a server for coordination
     int clientSocket, attempt = 0;
@@ -589,12 +579,12 @@ void client_connect_loop() {
     int satisfied, n_polls = 0;
     char serverMsgBuffer[NAME_BUFFER_SIZE] = {0};
     // Receive server start message
-    args.error_log << "Wait for server ready message" << std::endl;
+    if (args.debug >= DebugVerbose) args.error_log << "Wait for server ready message" << std::endl;
     recv(clientSocket, serverMsgBuffer, NAME_BUFFER_SIZE, 0);
-    args.error_log << "Received server ready message. Begin polling" << std::endl;
+    if (args.debug >= DebugVerbose) args.error_log << "Received server ready message. Begin polling" << std::endl;
     while (1) {
-        if (args.debug >= DebugMinimal)
-            args.error_log << "Client polls iteration #" << n_polls << std::endl;
+        // !! Error-log uses this message as a timestamp synchronization point. It should not be guarded by debug level! !!
+        args.error_log << "Client polls iteration #" << n_polls << std::endl;
         satisfied = poll_cycle(t_minus_one); // Monitor until server signals for termination
         fd_set readfds;
         FD_ZERO(&readfds);
@@ -614,7 +604,7 @@ void client_connect_loop() {
         }
         n_polls++;
     }
-    args.error_log << "Closing connection to server" << std::endl;
+    if (args.debug >= DebugVerbose) args.error_log << "Closing connection to server" << std::endl;
     close(clientSocket);
 }
 #endif
@@ -651,12 +641,29 @@ void set_initial_temperatures() {
     #endif
 }
 
-void fork_join_loop(int satisfy) {
+int get_n_to_satisfy() {
+    #ifdef BUILD_CPU
+    satisfy += cpus_to_satisfy;
+    #endif
+    #ifdef BUILD_GPU
+    satisfy += gpus_to_satisfy;
+    #endif
+    #ifdef BUILD_SUBMER
+    satisfy += submers_to_satisfy;
+    #endif
+    #ifdef BUILD_NVME
+    satisfy += nvme_to_satisfy;
+    #endif
+}
+
+void fork_join_loop() {
+    // Prepare count of sensors to re-satisfy for early-exit
+    int satisfy = get_n_to_satisfy();
     // Initial Wait
     std::chrono::time_point<std::chrono::system_clock> t0 = std::chrono::system_clock::now(), t1 = t0;
     if (args.format == OutputJSON)
         args.log << "{\"event\": \"initial-wait-start\", \"timestamp\": " << std::chrono::duration_cast<std::chrono::nanoseconds>(t1-t_minus_one).count() / 1e9 << "}," << std::endl;
-    else if (args.debug >= DebugVerbose)
+    else
         args.error_log << "Begin initial wait. Should last " << args.initial_wait << " seconds" << std::endl;
     double waiting = std::chrono::duration_cast<std::chrono::nanoseconds>(t1-t0).count() / 1e9;
     int poll_result;
@@ -720,6 +727,7 @@ void fork_join_parent_poll(pid_t pid, std::chrono::time_point<std::chrono::syste
         args.error_log << "Wait on child process failed" << std::endl;
         exit(EXIT_FAILURE);
     }
+    // !! Error-log uses these messages as a timestamp synchronization point. It should not be guarded by debug level! !!
     if (WIFEXITED(status)) args.error_log << "Child process exits with status " << WEXITSTATUS(status) << std::endl;
     else if (WIFSIGNALED(status)) args.error_log << "Child process caught/terminated by signal " << WTERMSIG(status) << std::endl;
 

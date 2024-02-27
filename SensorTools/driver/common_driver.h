@@ -56,7 +56,8 @@ void set_initial_temperatures();
 int poll_cycle(std::chrono::time_point<std::chrono::system_clock> t0);
 void client_connect_loop();
 void simple_poll_cycle_loop();
-void fork_join_loop(int satisfy);
+int get_n_to_satisfy();
+void fork_join_loop();
 void fork_join_parent_poll(pid_t pid, std::chrono::time_point<std::chrono::system_clock> t0, int satisfy);
 // Helpers that may be called at other times
 void shutdown(int signal);
