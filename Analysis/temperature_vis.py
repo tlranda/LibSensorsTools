@@ -30,6 +30,8 @@ def build():
                      help="Group temperatures that match each given regex (default: all temperatures)")
     plotting.add_argument("--independent-y-scaling", action="store_true",
                      help="Give all plots independent y-axis scaling (default: constant between plots)")
+    plotting.add_argument("--mean-var", action="store_true",
+                     help="Use mean and variance for items from the same host (default: %(default)s)")
     plotting.add_argument("--title", default=None,
                      help="Provide a title for the plot (default %(default)s)")
     return prs
@@ -156,6 +158,11 @@ def main(args=None):
             if re.match(f".*{regex}.*", temps.label) is not None:
                 ax_id = idx
         ax = axs[ax_id]
+        if args.mean_var:
+            # Something like this, but it has to aggregate things with the same server source
+            #ax.plot(temps.timestamps, np.mean(temps.data), label=temps.label)
+            #ax.fill_between(temps.timestamps, np.mean(temps.data)-np.std(temps.data), np.mean(temps.data)+np.std(temps.data))
+        #else: # but not yet because the above is not implemented yet
         ax.plot(temps.timestamps, temps.data, label=temps.label)
         local_ymin = np.min(temps.data)
         local_ymax = np.max(temps.data)
