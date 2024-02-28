@@ -5,6 +5,8 @@ import pathlib
 import struct
 import argparse
 import numpy as np
+import tqdm
+import multiprocessing
 
 def build():
     prs = argparse.ArgumentParser()
@@ -26,18 +28,56 @@ def parse(args=None, prs=None):
     assert args.w >= 1 and args.n > (1+args.w), "Graphs must have width >= 1 and number of nodes >= 1 + width"
     return args
 
-def csr_graph(edge_list):
-    # Header section
-    total_elements = len(edge_list)
-    header = struct.pack('qq', total_elements, 0)  # 8-byte integers
+class csr_exporter():
+    def __init__(self, path, n):
+        self.header_added = False
+        self.dst = path.with_suffix('.bel.dst')
+        self.dst_tmp = self.dst.with_suffix('.dst.tmp')
+        self.dst_handle = None
+        self.col = path.with_suffix('.bel.col')
+        self.col_tmp = self.col.with_suffix('.col.tmp')
+        self.col_handle = None
+        self.iterable = tqdm.tqdm(total=n)
+        #self.lock = multiprocessing.Manager().Lock()
 
-    # Data section
-    # Graphs should be written in CSR format
-    dst_data = struct.pack('q'*total_elements, *map(lambda x: x[0], edge_list)) # Row offsets
-    col_data = struct.pack('q'*total_elements, *map(lambda x: x[1], edge_list)) # Column of source nodes
-    return header, dst_data, col_data
+    def __enter__(self):
+        self.dst_handle = open(self.dst_tmp,'wb')
+        self.col_handle = open(self.col_tmp,'wb')
+        self.written = 0
+        return self
 
-def linked_list(args):
+    def export_edge(self, edge):
+        #with self.lock:
+        self.dst_handle.write(struct.pack('q', edge[0]))
+        self.col_handle.write(struct.pack('q', edge[1]))
+        self.written += 1
+        self.iterable.update(1)
+
+    def get_header(self):
+        return struct.pack('qq', self.written, 0)
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        if self.dst_handle is not None:
+            self.dst_handle.close()
+        if self.col_handle is not None:
+            self.col_handle.close()
+        # Put headers in place after the fact -- rewrites the file but should be easier on memory than
+        # accumulating all the python objects forever
+        if not self.header_added:
+            header = self.get_header()
+            with open(self.dst_tmp,'rb') as old, open(self.dst,'wb') as new:
+                new.write(header) # Header
+                new.write(old.read()) # Contents
+            with open(self.col_tmp,'rb') as old, open(self.col,'wb') as new:
+                new.write(header) # Header
+                new.write(old.read()) # Contents
+            self.header_added = True
+
+#def fill_ll_tail(exporter, root, length):
+#    for i in range(1, length+1):
+#        exporter.export_edge((root+i-1, root+i))
+
+def linked_list(args, exporter):
     """
         Writes a single-branch linked list with width == args.w and total number of nodes args.n
         Some example graphs:
@@ -84,15 +124,22 @@ def linked_list(args):
     ll_tail_length = [(ll_tail_nodes // args.w) + int(_ < ll_tail_cleanup) for _ in range(args.w)] # Length of each tail
 
     # Top of the graph, draw edges from head to linked list starts
-    edge_list = [(0,extent+1+sum(ll_tail_length[:extent])) for extent in range(args.w)]
+    head_list = [(0,extent+1+sum(ll_tail_length[:extent])) for extent in range(args.w)]
+    for edge in head_list:
+        exporter.export_edge(edge)
     # Add each tail
-    tails = []
-    for (head,tail_root), tail_length in zip(edge_list, ll_tail_length):
-        tails.extend([(tail_root+i-1,tail_root+i) for i in range(1,tail_length+1)])
-    edge_list = edge_list + tails
-    return edge_list
+    for (head,tail_root), tail_length in zip(head_list, ll_tail_length):
+        #with multiprocessing.Pool() as pool:
+        #    result_queue = []
+        #    for i in range(1, tail_length+1):
+        #        args = (exporter, tail_root, i)
+        #        result_queue.append(pool.apply_async(fill_ll_tail, args))
+        #    for _ in result_queue:
+        #        _.get()
+        for i in range(1, tail_length+1):
+            exporter.export_edge((tail_root+i-1, tail_root+i))
 
-def branch(args):
+def branch(args, exporter):
     """
         Writes a single-branch linked list with width == args.w and total number of nodes args.n
         Some example graphs:
@@ -118,17 +165,16 @@ def branch(args):
               V
               13
     """
-    edge_list = []
     queue = [0] # Queue head node for incremental construction
     next_queue = []
     next_insert = 1
-    while len(edge_list)+1 < args.n: # Always one more vertex than edges, but we write graph as edges
+    while next_insert < args.n: # Always one more vertex than edges, but we write graph as edges
         for parent in queue:
             for w in range(args.w):
-                edge_list.append((parent,next_insert))
+                exporter.export_edge((parent,next_insert))
                 next_queue.append(next_insert)
                 next_insert += 1
-                if len(edge_list)+1 >= args.n:
+                if next_insert >= args.n:
                     break
             # Else-continue-break used here to have the break above halt both loops
             else:
@@ -137,9 +183,8 @@ def branch(args):
         # Move to next depth in the graph
         queue = next_queue
         next_queue = []
-    return edge_list
 
-def fork_join(args):
+def fork_join(args, exporter):
     """
         Writes a fixed-width fork, then join with width == args.w and total number of nodes args.n
         Some example graphs:
@@ -184,8 +229,6 @@ def fork_join(args):
           V  V  V  V  V
           8  9  10 11 12
     """
-    edge_list = []
-
     sync_points = [0]
     while sync_points[-1] < args.n:
         sync_points.append(sync_points[-1] + args.w+1)
@@ -194,13 +237,16 @@ def fork_join(args):
         limit = args.w+1
         if sync_from+limit-1 >= args.n:
             limit -= (sync_from+limit-1-args.n)
-        edge_list.extend([(sync_from, sync_from+i) for i in range(1,limit)])
+        #edge_list.extend([(sync_from, sync_from+i) for i in range(1,limit)])
+        for i in range(1, limit):
+            exporter.export_edge((sync_from, sync_from+i))
         # Last entry will be >= n and should not be synced
         if sync_to < args.n:
-            edge_list.extend([(sync_from+i, sync_to) for i in range(1,limit)])
-    return edge_list
+            #edge_list.extend([(sync_from+i, sync_to) for i in range(1,limit)])
+            for i in range(1,limit):
+                exporter.export_edge((sync_from+i, sync_to))
 
-def self_loop(args):
+def self_loop(args, exporter):
     """
         A chain of N self-connected vertices (no edges between distinct vertices)
         Example graphs:
@@ -209,25 +255,27 @@ def self_loop(args):
         ^ |    ^ |    ^ |
         +-+    +-+    +-+
     """
-    edge_list = [(i,i) for i in range(args.n)]
-    return edge_list
+    for i in range(args.n):
+        exporter.export_edge((i,i))
 
 def main(args=None):
     args = parse(args)
     output = pathlib.Path(args.output)
 
-    if args.pattern == 'linked-list':
-        edge_list = linked_list(args)
-    elif args.pattern == 'branch':
-        edge_list = branch(args)
-    elif args.pattern == 'fork-join':
-        edge_list = fork_join(args)
-    elif args.pattern == 'self-loop':
-        edge_list = self_loop(args)
-    else:
-        raise NotImplemented(f"Need implementation for {args.pattern}")
+    with csr_exporter(output, args.n) as exporter:
+        if args.pattern == 'linked-list':
+            linked_list(args, exporter)
+        elif args.pattern == 'branch':
+            branch(args, exporter)
+        elif args.pattern == 'fork-join':
+            fork_join(args, exporter)
+        elif args.pattern == 'self-loop':
+            self_loop(args, exporter)
+        else:
+            raise NotImplemented(f"Need implementation for {args.pattern}")
+        header = exporter.get_header()
+    """
     header, dst_data, col_data = csr_graph(edge_list)
-    val_data = b''  # Assuming unweighted graph
 
     # Write to binary files
     with open(output.with_suffix('.bel.dst'), 'wb') as f_dst:
@@ -235,7 +283,8 @@ def main(args=None):
 
     with open(output.with_suffix('.bel.col'), 'wb') as f_col:
         f_col.write(header + col_data)
-
+    """
+    val_data = b''  # Assuming unweighted graph
     with open(output.with_suffix('.bel.val'), 'wb') as f_val:
         f_val.write(header + val_data)
 
