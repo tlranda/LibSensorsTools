@@ -15,7 +15,8 @@ execution_mode=$(( $# > 0 ));
 
 # Command to launch from server nodes
 #bench_command="${path_to_git_repo}/Benchmarks/./sleep_counter.sh 4";
-bench_command="${path_to_git_repo}/Benchmarks/./multiGPU_Stream.sh";
+#bench_command="${path_to_git_repo}/Benchmarks/./multiGPU_Stream.sh";
+bench_command="${path_to_git_repo}/Benchmarks/./multiGPU_EMOGI.sh";
 # Arguments to control the sensing processes
 FORMAT="2";
 POLL="1";
