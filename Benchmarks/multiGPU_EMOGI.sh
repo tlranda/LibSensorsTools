@@ -14,12 +14,14 @@ else
     # Expect ~1m per iteration
 fi
 n_times=1; # Default
+replication_factor=36; # Expand to mostly fill GPU memory
 if [[ $# -eq 1 ]]; then
     echo "Setting n_times to $1";
     n_times=$1;
 else
     echo "Using default n_times = ${n_times}";
 fi
+echo "Using replication factor ${replication_factor}";
 
 # Set strings once
 composed=();
@@ -33,8 +35,10 @@ for (( i=0; i<${n_times}; ++i )); do
     date +"%F %T.%N %Z";
     old_IFS="${IFS}";
     IFS="^";
-    for cmd in ${composed[@]}; do
-        eval "${cmd}";
+    for (( j=0; j<${replication_factor}; j++ )); do
+        for cmd in ${composed[@]}; do
+            eval "${cmd}";
+        done;
     done;
     # Ensure the end timestamp looks right in the data
     wait;
