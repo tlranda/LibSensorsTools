@@ -79,7 +79,7 @@ void closeSNMP(int sockfd, struct addrinfo *serv_addr){
 // Message Creation Interface
 byte requestID = 0;
 
-byte* createOIDStr(char *oid){
+byte* createOIDStr(const char *oid){
   char *copy = malloc(strlen(oid)+1);
   strcpy(copy, oid);
   size_t oidStrLen = 1;
@@ -112,7 +112,7 @@ byte* createOIDStr(char *oid){
   return oidStr;
 }
 
-byte* createGetRequestVBList(char **oids, size_t num){
+byte* createGetRequestVBList(const char **oids, size_t num){
   size_t vbListSize = 0;
   byte *vbList = malloc(vbListSize);
   for(size_t i = 0; i < num; i++){
@@ -180,7 +180,7 @@ byte* createPDU(byte type, byte *vblist){
   return pduMsg;
 }
 
-byte* createGetRequestMessage(byte version, byte* community, size_t cLen, char **oids, size_t num){
+byte* createGetRequestMessage(byte version, byte* community, size_t cLen, const char **oids, size_t num){
   // Version Payload
   byte verStr[3] = {SNMP_Integer, 0x01, version};
 #ifdef DEBUG

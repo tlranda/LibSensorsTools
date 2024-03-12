@@ -40,8 +40,6 @@ SNMPMonitor::~SNMPMonitor(){
     free(this->requestMessages.at(i));
   }
 	this->requestMessages.clear();
-
-	//free(this->lastResponse);
 }
 
 void SNMPMonitor::registerHost(char *host){
@@ -57,7 +55,7 @@ void SNMPMonitor::registerHost(char *host){
   }
 }
 
-void SNMPMonitor::registerOIDS(char **oids, size_t num){
+void SNMPMonitor::registerOIDS(const char **oids, size_t num){
   byte *msg = createGetRequestMessage(SNMP_V1, (byte*)this->community, strlen(this->community), oids, num);
   if(decodeLen(&msg[1]) > SNMP_SendMax){
 #ifdef DEBUG
@@ -100,7 +98,7 @@ void SNMPMonitor::cache(){
 		hc.hostID = (uint8_t) i;
 		hc.values = {};
 		for(size_t j = 0; j < NUM_OIDS; j++){
-			hc.values.emplace(this->elements[j], -1.0);
+			hc.values[this->oids[j]] = -1;
 		}
 		this->myCache.hostCaches.push_back(hc);
 	}
@@ -109,7 +107,7 @@ void SNMPMonitor::cache(){
 	// write header to output file
 	for(size_t i = 0; i < this->numHosts; i++){
 		for(size_t j = 0; j < NUM_OIDS; j++){
-			if(i && j) fprintf(this->out, ",%s:%s", this->connectedHosts[i], this->elements[j]);
+			if(i || j) fprintf(this->out, ",%s:%s", this->connectedHosts[i], this->elements[j]);
 			else fprintf(this->out, "%s:%s", this->connectedHosts[i], this->elements[j]);
 		}
 	}
@@ -151,6 +149,23 @@ void SNMPMonitor::update(){
 			this->parseResponseSequence(j, this->lastResponse);
     }
   }
+	for(size_t i = 0; i < this->numHosts; i++){
+		for(size_t j = 0; j < NUM_OIDS; j++){
+			if(i || j) fprintf(this->out, ",%d", this->myCache.hostCaches[i].values[this->oids[j]]);
+			else fprintf(this->out, "%d", this->myCache.hostCaches[i].values[this->oids[j]]);
+		}
+	}
+	fprintf(this->out, "\n");
+}
+
+int parseInteger(byte *string){
+	size_t len = decodeLen(&string[1]);
+	size_t lenLen = getEncodedLenLen(len);
+	int r = 0;
+	for(size_t left = len, cur = 1+lenLen; cur < 1+lenLen+len; left--, cur++){
+		r += string[cur] * pow(16,(left-1));
+	}
+	return r;
 }
 
 void SNMPMonitor::parseResponseSequence(size_t hostID, byte *response){
@@ -220,14 +235,15 @@ void SNMPMonitor::parseResponseSequence(size_t hostID, byte *response){
 					oid += "."+std::to_string(decodeOID(&response[cur+i]));
 				}
 			}
-			fprintf(this->out, "%s:%s -> ", this->connectedHosts[hostID], oid.c_str());
 			cur += len;
 			seqOffset += len;
 			listOffset += len;
 			// value component
 			len = decodeLen(&response[cur+1]);
 			lenLen = getEncodedLenLen(len);
-			dumpSNMPMsg(this->out, &response[cur]);
+			int val = parseInteger(&response[cur]);
+			fprintf(this->out, "%s:%s -> %d\n", this->connectedHosts[hostID], oid.c_str(), val);
+			this->myCache.hostCaches[hostID].values[oid.c_str()] = val;
 			cur += 1+lenLen+len;
 			seqOffset += 1+lenLen+len;
 			listOffset += 1+lenLen+len;	

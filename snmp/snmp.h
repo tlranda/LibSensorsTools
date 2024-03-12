@@ -37,10 +37,10 @@ int sendSNMP(int sockfd, struct addrinfo *serv_addr, byte *msg);
 int recvSNMP(int sockfd, struct addrinfo *serv_addr, byte *repsonse, size_t len);
 void closeSNMP(int sockfd, struct addrinfo *serv_addr);
 
-byte* createOIDStr(char *oid);
-byte* createGetRequestVBList(char **oids, size_t num);
+byte* createOIDStr(const char *oid);
+byte* createGetRequestVBList(const char **oids, size_t num);
 byte* createPDU(byte type, byte *vblist);
-byte* createGetRequestMessage(byte version, byte* community, size_t cLen, char **oids, size_t num);
+byte* createGetRequestMessage(byte version, byte* community, size_t cLen, const char **oids, size_t num);
 
 size_t encodeLen(size_t len, byte **encodedLen);
 size_t getEncodedLenLen(size_t len);
