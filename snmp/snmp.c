@@ -50,7 +50,7 @@ int sendSNMP(int sockfd, struct addrinfo *serv_addr, byte *msg){
   ssize_t r = sendto(sockfd, msg, msgLen, 0, serv_addr->ai_addr, serv_addr->ai_addrlen);
   if(r < 0){
     fprintf(stderr, "%s\n", strerror(errno));
-    return -1;
+    return r;
   }else if(r != msgLen){
     fprintf(stderr, "SNMP Message partially transmitted\n");
     return 1;
@@ -62,7 +62,7 @@ int recvSNMP(int sockfd, struct addrinfo *serv_addr, byte *response, size_t len)
   ssize_t r = recvfrom(sockfd, response, len, 0, serv_addr->ai_addr, &serv_addr->ai_addrlen);
   if(r < 0){
     fprintf(stderr, "%s\n", strerror(errno));
-    return -1;
+    return r;
   }else if(r == 0){
     fprintf(stderr, "Peer SNMP controller closed socket\n");
     return 1;
@@ -106,8 +106,8 @@ byte* createOIDStr(const char *oid){
   free(copy);
 #ifdef DEBUG
   static int count = 0;
-  printf("OID %d: ", count++);
-  dumpSNMPMsg(stdout, oidStr);
+  fprintf(stderr, "OID %d: ", count++);
+  dumpSNMPMsg(stderr, oidStr);
 #endif
   return oidStr;
 }
@@ -128,8 +128,8 @@ byte* createGetRequestVBList(const char **oids, size_t num){
     vb[1+r+oidStrLen] = SNMP_Null;
     vb[1+r+oidStrLen+1] = 0x00;
 #ifdef DEBUG
-    printf("VB %ld: ", i);
-    dumpSNMPMsg(stdout, vb);
+    fprintf(stderr, "VB %ld: ", i);
+    dumpSNMPMsg(stderr, vb);
 #endif
     size_t newSize = vbListSize + vbLen + r + 1;
     vbList = realloc(vbList, newSize);
@@ -147,8 +147,8 @@ byte* createGetRequestVBList(const char **oids, size_t num){
   memcpy(&vbList[1], l, r);
   free(l);
 #ifdef DEBUG
-  printf("VBList: ");
-  dumpSNMPMsg(stdout, vbList);
+  fprintf(stderr, "VBList: ");
+  dumpSNMPMsg(stderr, vbList);
 #endif
   return vbList;
 }
@@ -174,8 +174,8 @@ byte* createPDU(byte type, byte *vblist){
   memcpy(&pduMsg[10+r], vblist, vblistLen);
   free(l);
 #ifdef DEBUG
-  printf("PDU: ");
-  dumpSNMPMsg(stdout, pduMsg);
+  fprintf(stderr, "PDU: ");
+  dumpSNMPMsg(stderr, pduMsg);
 #endif
   return pduMsg;
 }
@@ -184,8 +184,8 @@ byte* createGetRequestMessage(byte version, byte* community, size_t cLen, const 
   // Version Payload
   byte verStr[3] = {SNMP_Integer, 0x01, version};
 #ifdef DEBUG
-  printf("Version Payload: ");
-  dumpSNMPMsg(stdout, verStr);
+  fprintf(stderr, "Version Payload: ");
+  dumpSNMPMsg(stderr, verStr);
 #endif
   // Community Payload
   byte *l = malloc(0);
@@ -196,8 +196,8 @@ byte* createGetRequestMessage(byte version, byte* community, size_t cLen, const 
   memcpy(&comStr[1+r], community, cLen);
   free(l);
 #ifdef DEBUG
-  printf("Community Payload: ");
-  dumpSNMPMsg(stdout, comStr);
+  fprintf(stderr, "Community Payload: ");
+  dumpSNMPMsg(stderr, comStr);
 #endif
   // PDU Payload
   byte *vblist = createGetRequestVBList(oids, num);
@@ -220,8 +220,8 @@ byte* createGetRequestMessage(byte version, byte* community, size_t cLen, const 
   free(pdu);
   free(comStr);
 #ifdef DEBUG
-  printf("MSG: ");
-  dumpSNMPMsg(stdout, msg);
+  fprintf(stderr, "MSG: ");
+  dumpSNMPMsg(stderr, msg);
 #endif
   return msg;
 }

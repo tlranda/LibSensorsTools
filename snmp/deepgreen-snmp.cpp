@@ -98,7 +98,7 @@ void SNMPMonitor::cache(){
 		hc.hostID = (uint8_t) i;
 		hc.values = {};
 		for(size_t j = 0; j < NUM_OIDS; j++){
-			hc.values[this->oids[j]] = -1;
+			hc.values[std::string(this->oids[j])] = -1;
 		}
 		this->myCache.hostCaches.push_back(hc);
 	}
@@ -111,7 +111,6 @@ void SNMPMonitor::cache(){
 			else fprintf(this->out, "%s:%s", this->connectedHosts[i], this->elements[j]);
 		}
 	}
-	fprintf(this->out, "\n");
 }
 
 void SNMPMonitor::update(){
@@ -123,21 +122,21 @@ void SNMPMonitor::update(){
 #endif
       int r = sendSNMP(this->sockets.at(j), this->addresses.at(j), this->requestMessages.at(i));
       if(r < 0){
-        //TODO handle send error
+        //TODO handle send error; depends on error i.e. close host, cleanup, reconnect, send again, etc.
         fprintf(this->log, "send error\n");
         continue;
       }else if(r > 0){
-        //TODO handle partial send
+        //TODO handle partial send; i.e. send again
         fprintf(this->log, "partial send\n");
         continue;
       }
       r = recvSNMP(this->sockets.at(j), this->addresses.at(j), this->lastResponse, SNMP_ResponseMax);
       if(r < 0){
-        //TODO handle recv error
+        //TODO handle recv error; depends on error i.e. close host, cleanup, reconnect, receive again, etc.
         fprintf(this->log, "recv error\n");
         continue;
       }else if(r > 0){
-        //TODO handle peer close
+        //TODO handle peer close; i.e. attempt to reconnect 
         fprintf(this->log, "peer close\n");
         continue;
       }
@@ -145,8 +144,7 @@ void SNMPMonitor::update(){
 			fprintf(this->err, "Recieved message (%ld,%ld):\n", i, j);
 			dumpSNMPMsg(this->err, this->lastResponse);
 #endif
-			//TODO process response byte string and update values to cache
-			this->parseResponseSequence(j, this->lastResponse);
+			this->parseGetResponseSequence(j, this->lastResponse);
     }
   }
 	for(size_t i = 0; i < this->numHosts; i++){
@@ -155,20 +153,20 @@ void SNMPMonitor::update(){
 			else fprintf(this->out, "%d", this->myCache.hostCaches[i].values[this->oids[j]]);
 		}
 	}
-	fprintf(this->out, "\n");
 }
 
 int parseInteger(byte *string){
 	size_t len = decodeLen(&string[1]);
 	size_t lenLen = getEncodedLenLen(len);
 	int r = 0;
-	for(size_t left = len, cur = 1+lenLen; cur < 1+lenLen+len; left--, cur++){
-		r += string[cur] * pow(16,(left-1));
+	for(size_t cur = 1+lenLen; cur < 1+lenLen+len; cur++){
+		r << 8;
+		r += (int)string[cur];
 	}
 	return r;
 }
 
-void SNMPMonitor::parseResponseSequence(size_t hostID, byte *response){
+void SNMPMonitor::parseGetResponseSequence(size_t hostID, byte *response){
 	byte type = response[0];
 	if(type != SNMP_Sequence) return;
 	size_t seqLen = decodeLen(&response[1]);
@@ -225,10 +223,13 @@ void SNMPMonitor::parseResponseSequence(size_t hostID, byte *response){
 			cur += 1+lenLen;
 			seqOffset += 1+lenLen;
 			listOffset += 1+lenLen;
+			size_t c = 0;
 			for(size_t i = 0; i < len; i++){
-				if(response[cur+i] & 0x80 && skip) continue;
+				if(skip){
+					if(!(response[cur+i] & 0x80)) skip = false;
+					continue;
+				}
 				if(response[cur+i] & 0x80) skip = true;
-				else skip = false;
 				if(response[cur+i] == 0x2b){
 					oid += "1.3";
 				}else{
@@ -242,8 +243,7 @@ void SNMPMonitor::parseResponseSequence(size_t hostID, byte *response){
 			len = decodeLen(&response[cur+1]);
 			lenLen = getEncodedLenLen(len);
 			int val = parseInteger(&response[cur]);
-			fprintf(this->out, "%s:%s -> %d\n", this->connectedHosts[hostID], oid.c_str(), val);
-			this->myCache.hostCaches[hostID].values[oid.c_str()] = val;
+			this->myCache.hostCaches[hostID].values[oid] = val;
 			cur += 1+lenLen+len;
 			seqOffset += 1+lenLen+len;
 			listOffset += 1+lenLen+len;	

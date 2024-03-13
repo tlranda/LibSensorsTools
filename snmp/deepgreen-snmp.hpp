@@ -13,7 +13,7 @@
 typedef struct SNMPHostCache{
 	uint8_t status:2;
 	uint8_t hostID:6;
-	std::unordered_map<const char*,int> values;
+	std::unordered_map<std::string,int> values;
 }SNMPHostCache;
 
 typedef struct SNMPCache{
@@ -30,17 +30,17 @@ class SNMPMonitor{
 		FILE *out, *err, *log;
     byte lastResponse[SNMP_ResponseMax];
 		const char *oids[NUM_OIDS] =
-			{
-				"1.3.6.1.4.1.318.1.1.26.6.3.1.5.1", //Phase Load
-				"1.3.6.1.4.1.318.1.1.26.8.3.1.5.1", //Bank 1 Load
-				"1.3.6.1.4.1.318.1.1.26.8.3.1.5.2"  //Bank 2 Load
-			};
+		{
+			"1.3.6.1.4.1.318.1.1.26.6.3.1.5.1", //Phase Load
+			"1.3.6.1.4.1.318.1.1.26.8.3.1.5.1", //Bank 1 Load
+			"1.3.6.1.4.1.318.1.1.26.8.3.1.5.2"  //Bank 2 Load
+		};
 		const char *elements[NUM_OIDS] =
-			{
-				"phase",
-				"bank1",
-				"bank2"
-			};
+		{
+			"phase",
+			"bank1",
+			"bank2"
+		};
 		SNMPCache myCache;
     
   public:
@@ -56,5 +56,5 @@ class SNMPMonitor{
     void cache();
     void update();
 
-		void parseResponseSequence(size_t hostID, byte *response);
+		void parseGetResponseSequence(size_t hostID, byte *response);
 };
