@@ -30,6 +30,9 @@ void parse(int argc, char** argv) {
             #ifdef BUILD_NVME
             {"nvme", no_argument, 0, 'n'},
             #endif
+            #ifdef BUILD_PDU
+            {"pdu", no_argument, 0, 'P'},
+            #endif
             {"ipaddr", required_argument, 0, 'I'},
             {"connections", required_argument, 0, 'C'},
         #else
@@ -59,6 +62,9 @@ void parse(int argc, char** argv) {
         #endif
         #ifdef BUILD_NVME
         "n"
+        #endif
+        #ifdef BUILD_PDU
+        "P"
         #endif
         "I:"
     #endif
@@ -99,6 +105,10 @@ void parse(int argc, char** argv) {
                     #ifdef BUILD_NVME
                     std::cout << "\t-n | --nvme\n\t\t" <<
                                  "Query NVMe device temperatures (default: Not queried)" << std::endl;
+                    #endif
+                    #ifdef BUILD_PDU
+                    std::cout << "\t-P | --pdu\n\t\t" <<
+                                 "Query PDU readings over SNMP (default: Not queried)" << std::endl;
                     #endif
                     std::cout << "\t-I | --ipaddr\n\t\t" <<
                                  "IP address of a server to coordinate with (server controls start/stop of measurements and any applications)" << std::endl;
@@ -155,6 +165,11 @@ void parse(int argc, char** argv) {
                 #ifdef BUILD_NVME
                 case 'n':
                     args.nvme = true;
+                    break;
+                #endif
+                #ifdef BUILD_PDU
+                case 'P':
+                    args.pdu = true;
                     break;
                 #endif
                 case 'I':
@@ -229,7 +244,10 @@ void parse(int argc, char** argv) {
         }
     }
     // Post-reading logic
-    if (!args.any_active()) args.default_active(); // Ensure defaults always on
+    if (!args.any_active()) {
+        if (args.debug >= DebugVerbose) args.error_log << "Nothing active, enabling defaults" << std::endl;
+        args.default_active(); // Ensure defaults always on
+    }
     if (optind < argc) {
         args.wrapped = const_cast<char**>(&argv[optind]);
         if (args.debug >= DebugMinimal && args.error_log.is_cerr()) {

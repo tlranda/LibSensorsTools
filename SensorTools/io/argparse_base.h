@@ -10,6 +10,7 @@
 #cmakedefine BUILD_GPU
 #cmakedefine BUILD_SUBMER
 #cmakedefine BUILD_NVME
+#cmakedefine BUILD_PDU
 #cmakedefine SERVER_MAIN
 
 #include "output.h" // Output class definition
@@ -40,6 +41,9 @@ typedef struct argstruct {
              #ifdef BUILD_NVME
              nvme = 0,
              #endif
+             #ifdef BUILD_PDU
+             pdu = 0,
+             #endif
          #endif
          version = 0,
          shutdown = 0;
@@ -69,6 +73,9 @@ typedef struct argstruct {
             #ifdef BUILD_NVME
             ret = ret | nvme;
             #endif
+            #ifdef BUILD_PDU
+            ret = ret | pdu;
+            #endif
         #endif
         return ret;
     }
@@ -88,6 +95,9 @@ typedef struct argstruct {
                 #endif
                 #ifdef BUILD_NVME
                 nvme = 1;
+                #endif
+                #ifdef BUILD_PDU
+                pdu = 1;
                 #endif
             #endif
             #endif

@@ -8,7 +8,7 @@
 #define LibSensorTools_Definitions
 
 #define NAME_BUFFER_SIZE 200
-#define SensorToolsVersion "0.2.2"
+#define SensorToolsVersion "0.3.0"
 #define SensorToolsPort 8080
 
 #endif

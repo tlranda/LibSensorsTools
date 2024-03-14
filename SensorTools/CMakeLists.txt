@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.20) # This may be overly-cautious, but is the tested version
 
 project(LibSensorTools
-    VERSION 0.2.2
+    VERSION 0.3.0
     DESCRIPTION "Composite library of sensing tools"
     HOMEPAGE_URL "https://github.com/tlranda/LibSensorsTools"
     LANGUAGES CXX)
@@ -33,6 +33,7 @@ option(BUILD_CPU "Build the lm-sensors tool" ON)
 option(BUILD_GPU "Build the nvml tool" OFF)
 option(BUILD_SUBMER "Build the submer pod webapi tool" OFF)
 option(BUILD_NVME "Build the libnvme tool" OFF)
+option(BUILD_PDU "Build the snmp pdu tool" OFF)
 # ALL tools building materials should live in the tools directory
 file(COPY tools DESTINATION "${CMAKE_CURRENT_BINARY_DIR}")
 # These instructions set up the various files for different tools
@@ -58,6 +59,10 @@ if (BUILD_NVME)
     set(LIBSENSORS_SOURCES ${LIBSENSORS_SOURCES} ${nvme_sources})
     set(LIBSENSORS_LIBRARIES ${LIBSENSORS_LIBRARIES} nvme)
 endif(BUILD_NVME)
+if (BUILD_PDU)
+    file(GLOB pdu_sources tools/pdu/pdu_tools.cpp)
+    set(LIBSENSORS_SOURCES ${LIBSENSORS_SOURCES} ${pdu_sources})
+endif(BUILD_PDU)
 # ::Libsensors
 
 # Common compile options and linked libraries
@@ -92,6 +97,7 @@ set(BUILD_CPU OFF)
 set(BUILD_GPU OFF)
 set(BUILD_SUBMER OFF)
 set(BUILD_NVME OFF)
+set(BUILD_PDU OFF)
 set(SERVER_MAIN ON)
 configure_file(io/argparse_base.h io/argparse_server.h)
 configure_file(io/argparse_base.cpp io/argparse_server.cpp)

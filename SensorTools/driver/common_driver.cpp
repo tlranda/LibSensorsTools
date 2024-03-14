@@ -2,6 +2,7 @@
 #cmakedefine BUILD_GPU
 #cmakedefine BUILD_SUBMER
 #cmakedefine BUILD_NVME
+#cmakedefine BUILD_PDU
 #cmakedefine SERVER_MAIN
 #ifdef SERVER_MAIN
 #include "common_driver_server.h"
@@ -46,6 +47,9 @@ void init_libsensorstools(int argc, char** argv) {
     #ifdef BUILD_SUBMER
     if (args.submer) curl_global_init(CURL_GLOBAL_ALL);
     #endif
+    #ifdef BUILD_PDU
+    // No libraries to initialize
+    #endif
 
     // Prepare for graceful shutdown via CTRL+C and other common signals
     struct sigaction sigHandler;
@@ -74,6 +78,9 @@ void init_libsensorstools(int argc, char** argv) {
                     #endif
                     #ifdef BUILD_NVME
                     "\t\"nvme\": " << args.nvme << "," << std::endl <<
+                    #endif
+                    #ifdef BUILD_PDU
+                    "\t\"pdu\": " << args.pdu << "," << std::endl <<
                     #endif
                     #ifdef SERVER_MAIN
                     "\t\"clients\": " << args.clients << "," << std::endl <<
@@ -114,6 +121,9 @@ void init_libsensorstools(int argc, char** argv) {
         #endif
         #ifdef BUILD_NVME
         "NVMe: " << args.nvme << std::endl <<
+        #endif
+        #ifdef BUILD_PDU
+        "PDU: " << args.pdu << std::endl <<
         #endif
         #ifdef SERVER_MAIN
         "Clients: " << args.clients << std::endl <<
@@ -171,6 +181,9 @@ void init_libsensorstools(int argc, char** argv) {
         #ifdef BUILD_NVME
         args.log << "\t\"LibNVMe\": \"" << nvme_get_version(NVME_VERSION_PROJECT) << "\"," << std::endl;
         #endif
+        #ifdef BUILD_PDU
+        // No libraries to log
+        #endif
         args.log << "\t\"Nlohmann_Json\": \"" <<
                         NLOHMANN_JSON_VERSION_MAJOR << "." <<
                         NLOHMANN_JSON_VERSION_MINOR << "." <<
@@ -197,6 +210,9 @@ void init_libsensorstools(int argc, char** argv) {
         #ifdef BUILD_NVME
         args.error_log << "LibNVMe: " << nvme_get_version(NVME_VERSION_PROJECT) << std::endl;
         #endif
+        #ifdef BUILD_PDU
+        // No libraries to log
+        #endif
         args.error_log << "Nlohmann_Json: " <<
                           NLOHMANN_JSON_VERSION_MAJOR << "." <<
                           NLOHMANN_JSON_VERSION_MINOR << "." <<
@@ -217,6 +233,9 @@ void init_libsensorstools(int argc, char** argv) {
     #endif
     #ifdef BUILD_NVME
     cache_nvme();
+    #endif
+    #ifdef BUILD_PDU
+    cache_pdus();
     #endif
 
     #ifndef SERVER_MAIN
@@ -383,6 +402,16 @@ void print_csv_header() {
                 args.log << ",nvme_" << i->index << "_" << j << "_temperature";
     }
     #endif
+    #ifdef BUILD_PDU
+    if (args.pdu) {
+        for (std::vector<std::unique_ptr<pdu_cache>>::iterator i = known_pdus.begin(); i != known_pdus.end(); i++) {
+            pdu_cache *j = i->get();
+            for (int k = 0; k < j->oid_cache.field_names.size(); k++) {
+                args.log << ",pdu_" << j->index << "_" << j->oid_cache.field_names[k];
+            }
+        }
+    }
+    #endif
     args.log << std::endl;
 }
 
@@ -407,6 +436,12 @@ void shutdown(int signal = 0) {
     #endif
     #ifdef BUILD_SUBMER
     curl_global_cleanup();
+    #endif
+    #ifdef BUILD_NVME
+    // No special shutdown needed
+    #endif
+    #ifdef BUILD_PDU
+    // No special shutdown needed
     #endif
     #ifdef SERVER_MAIN
     // Terminate and free client sockets
@@ -470,6 +505,14 @@ int poll_cycle(std::chrono::time_point<std::chrono::system_clock> t0) {
         if (args.debug >= DebugVerbose) args.error_log << "NVMe has " << update << " / " << nvme_to_satisfy << " satisfied temperatures" << std::endl;
         satisfied += update;
         //satisfied += update_nvme();
+    }
+    #endif
+    #ifdef BUILD_PDU
+    if (args.pdu) {
+        int update = update_pdus();
+        if (args.debug >= DebugVerbose) args.error_log << "PDUs have " << update << " / " << pdus_to_satisfy << " satisfied temperatures" << std::endl;
+        satisfied += update;
+        // satisfied += update_pdus();
     }
     #endif
     #ifdef SERVER_MAIN
@@ -639,9 +682,13 @@ void set_initial_temperatures() {
             for (int j = 0; j < i->temperature.size(); j++)
                 i->initial_temperature[j] = i->temperature[j];
     #endif
+    #ifdef BUILD_PDU
+    // Not a temperature unit, nothing to do
+    #endif
 }
 
 int get_n_to_satisfy() {
+    int satisfy = 0;
     #ifdef BUILD_CPU
     satisfy += cpus_to_satisfy;
     #endif
@@ -654,6 +701,10 @@ int get_n_to_satisfy() {
     #ifdef BUILD_NVME
     satisfy += nvme_to_satisfy;
     #endif
+    #ifdef BUILD_PDU
+    satisfy += pdus_to_satisfy;
+    #endif
+    return satisfy;
 }
 
 void fork_join_loop() {

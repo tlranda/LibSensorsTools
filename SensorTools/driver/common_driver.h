@@ -2,6 +2,7 @@
 #cmakedefine BUILD_GPU
 #cmakedefine BUILD_SUBMER
 #cmakedefine BUILD_NVME
+#cmakedefine BUILD_PDU
 #cmakedefine SERVER_MAIN
 // Headers and why they're included
 // Document necessary compiler flags as needed in full-line comment below the header
@@ -36,6 +37,9 @@
 #endif
 #ifdef BUILD_NVME
 #include "../tools/nvme/nvme_tools.h"
+#endif
+#ifdef BUILD_PDU
+#include "../tools/pdu/pdu_tools.h"
 #endif
 
 // End Headers
