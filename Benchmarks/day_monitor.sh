@@ -14,9 +14,11 @@ path_to_git_repo=`git rev-parse --show-toplevel`;
 execution_mode=$(( $# > 0 ));
 
 # Command to launch from server nodes
+bench_command="sleep 3600";
 #bench_command="${path_to_git_repo}/Benchmarks/./sleep_counter.sh 4";
 #bench_command="${path_to_git_repo}/Benchmarks/./multiGPU_Stream.sh";
-bench_command="${path_to_git_repo}/Benchmarks/./multiGPU_EMOGI.sh";
+#bench_command="${path_to_git_repo}/Benchmarks/./multiGPU_EMOGI.sh";
+#bench_command="${path_to_git_repo}/Benchmarks/./multiGPU_DGEMM.sh";
 # Arguments to control the sensing processes
 FORMAT="2";
 POLL="1";
@@ -189,7 +191,7 @@ for (( idx=0; idx < ${#client_list[@]}; ++idx)); do
     old_ifs="$IFS";
     IFS="";
     # Grep help from the program for flags, extract them into a continuous substring
-    client_options_fetch="${client_programs[$idx]} -h | grep -e \"-[cgsn] |\" | awk '{print substr(\$1,2)}' | tr -d \"\n\"";
+    client_options_fetch="${client_programs[$idx]} -h | grep -e \"-[cgsnP] |\" | awk '{print substr(\$1,2)}' | tr -d \"\n\"";
     if [[ ${client_list[$idx]} != ${HOSTNAME} ]]; then
         # Run on remote host to ensure the program launches properly
         client_options_fetch="ssh ${client_list[$idx]} ${client_options_fetch}";
@@ -222,5 +224,7 @@ echo "End sensing timestamp: ${end_timestamp}";
 analysis_call="python3 ../Analysis/temperature_vis.py --inputs ${outputdir}/*_client.${EXTENSION} --output ${outputdir}/temp_analysis.png --min-trace-diff 1 --min-temp-enforce 0 --max-temp-enforce 100 --regex-temperatures cpu gpu --independent-y-scaling --title \"${start_timestamp}\"";
 echo "Sensing terminated. Performing analysis."
 echo "${analysis_call}";
-eval "${analysis_call}";
+if [[ ${execution_mode} -eq 0 ]]; then
+    eval "${analysis_call}";
+fi
 

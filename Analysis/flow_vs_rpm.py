@@ -3,7 +3,11 @@ import json
 import matplotlib.pyplot as plt
 import numpy as np
 
-jdata = json.load(open('deepgreen_client.json','r'))
+JSON = '../Data/CUDA_Stream_2024_02_23_08_08_14_EST/deepgreen_client.json'
+#JSON = '../Benchmarks/day_monitor/2024_02_27_16_50_28_EST/deepgreen_client.json'
+TITLE = "8 Hours CUDA-STREAM, 24 Hours Post-Monitoring (Chilled Water OFF)"
+#TITLE = "2 Hours CUDA-STREAM, 8 Hours Post-Monitoring (Chilled Water ON)"
+jdata = json.load(open(JSON,'r'))
 where_event = [_ for _ in jdata if 'event' in _.keys() and _['event'] == 'poll-data']
 
 rpms = np.asarray([_['submer-0-pump1rpm'] for _ in where_event])
@@ -16,7 +20,7 @@ indicator = []
 prelude = 30
 postlude = 30
 # Max 55
-target_cycles = range(20) #range(56)
+target_cycles = range(19) #range(56)
 while cycle <= max(target_cycles):
     first_cf_on = left_off + np.nonzero(cfs[left_off:] > 0)[0][0]
     first_cf_off = first_cf_on + np.nonzero(cfs[first_cf_on:] == 0)[0][0]
@@ -44,4 +48,6 @@ ax2.plot(range(n_events), cfs[indicator], label='CF Value', color='tab:orange')
 ax3 = ax.twinx()
 ax3.plot(range(n_events), pod_temp[indicator], label='Pod temp', color='tab:green')
 fig.legend()
+ax.set_title(TITLE)
 plt.show()
+

@@ -159,6 +159,7 @@ def main(args=None):
                 ax_id = idx
         ax = axs[ax_id]
         if args.mean_var:
+            pass
             # Something like this, but it has to aggregate things with the same server source
             #ax.plot(temps.timestamps, np.mean(temps.data), label=temps.label)
             #ax.fill_between(temps.timestamps, np.mean(temps.data)-np.std(temps.data), np.mean(temps.data)+np.std(temps.data))
