@@ -14,11 +14,14 @@ path_to_git_repo=`git rev-parse --show-toplevel`;
 execution_mode=$(( $# > 0 ));
 
 # Command to launch from server nodes
-bench_command="sleep 3600";
+#bench_command="sleep 3600";
 #bench_command="${path_to_git_repo}/Benchmarks/./sleep_counter.sh 4";
 #bench_command="${path_to_git_repo}/Benchmarks/./multiGPU_Stream.sh";
 #bench_command="${path_to_git_repo}/Benchmarks/./multiGPU_EMOGI.sh";
 #bench_command="${path_to_git_repo}/Benchmarks/./multiGPU_DGEMM.sh";
+bench_command="${path_to_git_repo}/Benchmarks/./multiGPU_md5_cracker.sh";
+# Client flags for tools to search for
+client_flags="cgsnP";
 # Arguments to control the sensing processes
 FORMAT="2";
 POLL="1";
@@ -191,7 +194,7 @@ for (( idx=0; idx < ${#client_list[@]}; ++idx)); do
     old_ifs="$IFS";
     IFS="";
     # Grep help from the program for flags, extract them into a continuous substring
-    client_options_fetch="${client_programs[$idx]} -h | grep -e \"-[cgsnP] |\" | awk '{print substr(\$1,2)}' | tr -d \"\n\"";
+    client_options_fetch="${client_programs[$idx]} -h | grep -e \"-[${client_flags}] |\" | awk '{print substr(\$1,2)}' | tr -d \"\n\"";
     if [[ ${client_list[$idx]} != ${HOSTNAME} ]]; then
         # Run on remote host to ensure the program launches properly
         client_options_fetch="ssh ${client_list[$idx]} ${client_options_fetch}";
