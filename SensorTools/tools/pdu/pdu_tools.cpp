@@ -91,16 +91,22 @@ int update_pdus(void) {
                 // r < 0 is a send error (close host, cleanup, reconnect, send again, etc)
                 // r > 0 is a partial send (should send again)
                 // TODO: After defining a way to properly handle the above issues, change this to a WHILE loop with some limited cap on attempts before disabling the request for this pdu_cache entry
-                args.error_log << "Failed to send SNMP for PDU " << j->index << std::endl;
-                continue;
+                args.error_log << "Failed to send SNMP for PDU " << j->index << ", disabling PDU sensing from hence forth" << std::endl;
+                args.pdu = 0;
+                int old_pdus_to_satisfy = pdus_to_satisfy;
+                pdus_to_satisfy = 0;
+                return old_pdus_to_satisfy;
             }
             r = recvSNMP(j->sockfd, j->addr, j->lastResponse, SNMP_ResponseMax);
             if (r != 0) {
                 // r < 0 is a recv error (close host, cleanup, reconnect, receive again, etc)
                 // r > 0 is a peer close (attempt to reconnect)
                 // TODO: After defining a way to properly handle the above issues, change this to a WHILE loop with a limited cap on attempts before disabling the request for this pdu_cache entry
-                args.error_log << "Failed to receive SNMP for PDU " << j->index << std::endl;
-                continue;
+                args.error_log << "Failed to receive SNMP for PDU " << j->index << ", disabling PDU sensing from hence forth" << std::endl;
+                args.pdu = 0;
+                int old_pdus_to_satisfy = pdus_to_satisfy;
+                pdus_to_satisfy = 0;
+                return old_pdus_to_satisfy;
             }
 
             // Parse the response sequence of j->lastResponse

@@ -49,7 +49,7 @@ int sendSNMP(int sockfd, struct addrinfo *serv_addr, byte *msg){
   msgLen += lenBytes + 1;
 
 	struct timeval timeout = {.tv_sec = 0, .tv_usec = 500000}; // 1/2 second timeout
-	if(setsockopt(sockfd, SOL_SOCKET, &timeout, sizeof(struct timeval)) < 0){
+	if(setsockopt(sockfd, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof(struct timeval)) < 0){
 		fprintf(stderr, "setsockopt: %s\n", strerror(errno));
 		return -1;
 	}
@@ -67,7 +67,7 @@ int sendSNMP(int sockfd, struct addrinfo *serv_addr, byte *msg){
 
 int recvSNMP(int sockfd, struct addrinfo *serv_addr, byte *response, size_t len){
 	struct timeval timeout = {.tv_sec = 0, .tv_usec = 500000}; // 1/2 second timeout
-	if(setsockopt(sockfd, SOL_SOCKET, &timeout, sizeof(struct timeval)) < 0){
+	if(setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(struct timeval)) < 0){
 		fprintf(stderr, "setsockopt: %s\n", strerror(errno));
 		return -1;
 	}
