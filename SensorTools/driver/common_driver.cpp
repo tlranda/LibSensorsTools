@@ -654,7 +654,33 @@ void client_connect_loop() {
 
 void simple_poll_cycle_loop() {
     if (args.poll == 0) poll_cycle(t_minus_one); // Single event collection
-    else while (1) poll_cycle(t_minus_one); // No wrapping, monitor until the process is signaled to terminate
+    else {
+      if (args.initial_wait != 0 || args.post_wait != 0) { // Take wait periods as time to poll
+          std::chrono::time_point<std::chrono::system_clock> timeout_start = std::chrono::system_clock::now();
+          while (1) {
+              // Timeout check for initial wait
+              std::chrono::time_point<std::chrono::system_clock> timeout_now = std::chrono::system_clock::now();
+              if ((std::chrono::duration_cast<std::chrono::nanoseconds>(timeout_now-timeout_start).count() / 1e9) >= args.initial_wait) {
+                  break;
+              }
+              poll_cycle(t_minus_one);
+          }
+          timeout_start = std::chrono::system_clock::now();
+          // Usually there's a distinction between +/-, but not for this mode of execution
+          if (args.post_wait < 0) args.post_wait *= -1;
+          while (1) {
+              // Timeout check for post wait
+              std::chrono::time_point<std::chrono::system_clock> timeout_now = std::chrono::system_clock::now();
+              if ((std::chrono::duration_cast<std::chrono::nanoseconds>(timeout_now-timeout_start).count() / 1e9) >= args.post_wait) {
+                  break;
+              }
+              poll_cycle(t_minus_one);
+          }
+      }
+      else {
+          while (1) poll_cycle(t_minus_one); // No wrapping, monitor until the process is signaled to terminate
+      }
+    }
 }
 
 void set_initial_temperatures() {
