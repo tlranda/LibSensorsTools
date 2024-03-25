@@ -6,10 +6,10 @@ SNMPMonitor::SNMPMonitor(){
   this->addresses = {};
   this->numHosts = 0;
   this->requestMessages = {};
-	this->community = (char*)"public";
-	this->out = stdout;
-	this->err = stderr;
-	this->log = stderr;
+  this->community = (char*)"public";
+  this->out = stdout;
+  this->err = stderr;
+  this->log = stderr;
 }
 
 SNMPMonitor::SNMPMonitor(char **hosts, size_t num, FILE *out, FILE *err, FILE *log){
@@ -17,29 +17,23 @@ SNMPMonitor::SNMPMonitor(char **hosts, size_t num, FILE *out, FILE *err, FILE *l
   this->addresses = {};
   this->numHosts = 0;
   this->requestMessages = {};
-	this->community = (char*)"public";
-	this->out = out == NULL ? stdout : out;
-	this->err = err == NULL ? stderr : err;
-	this->log = log == NULL ? stderr : log;
+  this->community = (char*)"public";
+  this->out = out == NULL ? stdout : out;
+  this->err = err == NULL ? stderr : err;
+  this->log = log == NULL ? stderr : log;
 
-  for(size_t i = 0; i < num; i++){
-    this->registerHost(hosts[i]);
-  }
+  for(size_t i = 0; i < num; i++) this->registerHost(hosts[i]);
 }
 
 SNMPMonitor::~SNMPMonitor(){
-  for(size_t i = 0; i < this->numHosts; i++){
-    closeSNMP(this->sockets.at(i), this->addresses.at(i));
-  }
+  for(size_t i = 0; i < this->numHosts; i++) closeSNMP(this->sockets.at(i), this->addresses.at(i));
   this->sockets.clear();
   this->addresses.clear();
   this->connectedHosts.clear();
   this->numHosts = 0;
 
-  for(size_t i = 0; i < this->requestMessages.size(); i++){
-    free(this->requestMessages.at(i));
-  }
-	this->requestMessages.clear();
+  for(size_t i = 0; i < this->requestMessages.size(); i++) free(this->requestMessages.at(i));
+  this->requestMessages.clear();
 }
 
 void SNMPMonitor::registerHost(char *host){
@@ -136,7 +130,7 @@ void SNMPMonitor::update(){
         fprintf(this->log, "recv error\n");
         continue;
       }else if(r > 0){
-        //TODO handle peer close; i.e. attempt to reconnect 
+        //TODO handle peer close; i.e. attempt to reconnect
         fprintf(this->log, "peer close\n");
         continue;
       }
@@ -246,7 +240,7 @@ void SNMPMonitor::parseGetResponseSequence(size_t hostID, byte *response){
 			this->myCache.hostCaches[hostID].values[oid] = val;
 			cur += 1+lenLen+len;
 			seqOffset += 1+lenLen+len;
-			listOffset += 1+lenLen+len;	
+			listOffset += 1+lenLen+len;
 		}
 	}
 }

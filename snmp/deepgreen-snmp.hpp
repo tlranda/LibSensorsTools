@@ -24,37 +24,37 @@ class SNMPMonitor{
     std::vector<int> sockets;
     std::vector<struct addrinfo*> addresses;
     std::vector<char*> connectedHosts;
-		std::vector<byte*> requestMessages;
-		char *community;
+    std::vector<byte*> requestMessages;
+    char *community;
     size_t numHosts;
-		FILE *out, *err, *log;
+    FILE *out, *err, *log;
     byte lastResponse[SNMP_ResponseMax];
-		const char *oids[NUM_OIDS] =
-		{
-			"1.3.6.1.4.1.318.1.1.26.6.3.1.5.1", //Phase Load
-			"1.3.6.1.4.1.318.1.1.26.8.3.1.5.1", //Bank 1 Load
-			"1.3.6.1.4.1.318.1.1.26.8.3.1.5.2"  //Bank 2 Load
-		};
-		const char *elements[NUM_OIDS] =
-		{
-			"phase",
-			"bank1",
-			"bank2"
-		};
-		SNMPCache myCache;
-    
+    const char *oids[NUM_OIDS] =
+    {
+        "1.3.6.1.4.1.318.1.1.26.6.3.1.5.1", //Phase Load
+        "1.3.6.1.4.1.318.1.1.26.8.3.1.5.1", //Bank 1 Load
+        "1.3.6.1.4.1.318.1.1.26.8.3.1.5.2"  //Bank 2 Load
+    };
+    const char *elements[NUM_OIDS] =
+    {
+        "phase",
+        "bank1",
+        "bank2"
+    };
+    SNMPCache myCache;
+
   public:
     SNMPMonitor();
     SNMPMonitor(char **hosts, size_t num, FILE *out, FILE *err, FILE *log);
     ~SNMPMonitor();
 
-    void registerHost(char *host);   
+    void registerHost(char *host);
     void registerOIDS(const char **oids, size_t num);
-		void setCommunity(char *community);
-		void setFiles(FILE *out, FILE *err, FILE *log);
+    void setCommunity(char *community);
+    void setFiles(FILE *out, FILE *err, FILE *log);
 
     void cache();
     void update();
 
-		void parseGetResponseSequence(size_t hostID, byte *response);
+    void parseGetResponseSequence(size_t hostID, byte *response);
 };

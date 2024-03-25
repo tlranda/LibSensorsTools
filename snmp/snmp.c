@@ -20,8 +20,8 @@ int openSNMP(const char *host, struct addrinfo **serv_addr){
   hints.ai_protocol = 0;
   hints.ai_canonname = NULL;
   hints.ai_addr = NULL;
-  hints.ai_next = NULL; 
-  
+  hints.ai_next = NULL;
+
   int r = getaddrinfo(host, service, &hints, serv_addr);
   if(r){
     fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(r));
@@ -255,7 +255,7 @@ size_t getEncodedLenLen(size_t len){
     bytes += 1;
     len /= 256;
   }
-  return bytes+1; 
+  return bytes+1;
 }
 
 size_t decodeLen(byte *b){
