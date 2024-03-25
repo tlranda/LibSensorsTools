@@ -47,9 +47,16 @@ int sendSNMP(int sockfd, struct addrinfo *serv_addr, byte *msg){
     c /= 128;
   }
   msgLen += lenBytes + 1;
+
+	struct timeval timeout = {.tv_sec = 0, .tv_usec = 500000}; // 1/2 second timeout
+	if(setsockopt(sockfd, SOL_SOCKET, &timeout, sizeof(struct timeval)) < 0){
+		fprintf(stderr, "setsockopt: %s\n", strerror(errno));
+		return -1;
+	}
+
   ssize_t r = sendto(sockfd, msg, msgLen, 0, serv_addr->ai_addr, serv_addr->ai_addrlen);
   if(r < 0){
-    fprintf(stderr, "%s\n", strerror(errno));
+    fprintf(stderr, "sendto: %s\n", strerror(errno));
     return r;
   }else if(r != msgLen){
     fprintf(stderr, "SNMP Message partially transmitted\n");
@@ -59,9 +66,15 @@ int sendSNMP(int sockfd, struct addrinfo *serv_addr, byte *msg){
 }
 
 int recvSNMP(int sockfd, struct addrinfo *serv_addr, byte *response, size_t len){
-  ssize_t r = recvfrom(sockfd, response, len, 0, serv_addr->ai_addr, &serv_addr->ai_addrlen);
+	struct timeval timeout = {.tv_sec = 0, .tv_usec = 500000}; // 1/2 second timeout
+	if(setsockopt(sockfd, SOL_SOCKET, &timeout, sizeof(struct timeval)) < 0){
+		fprintf(stderr, "setsockopt: %s\n", strerror(errno));
+		return -1;
+	}
+  
+	ssize_t r = recvfrom(sockfd, response, len, 0, serv_addr->ai_addr, &serv_addr->ai_addrlen);
   if(r < 0){
-    fprintf(stderr, "%s\n", strerror(errno));
+    fprintf(stderr, "recvfrom: %s\n", strerror(errno));
     return r;
   }else if(r == 0){
     fprintf(stderr, "Peer SNMP controller closed socket\n");
