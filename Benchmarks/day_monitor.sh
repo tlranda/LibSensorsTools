@@ -21,7 +21,7 @@ execution_mode=$(( $# > 0 ));
 #bench_command="${path_to_git_repo}/Benchmarks/./multiGPU_DGEMM.sh";
 bench_command="${path_to_git_repo}/Benchmarks/./multiGPU_md5_cracker.sh";
 # Client flags for tools to search for
-client_flags="cgsnP";
+client_flags="cgsn";
 # Arguments to control the sensing processes
 FORMAT="2";
 POLL="1";
@@ -215,6 +215,15 @@ for (( idx=0; idx < ${#client_list[@]}; ++idx)); do
     echo "${client_cmd}";
     if [[ ${execution_mode} -eq 0 ]]; then
         eval "${client_cmd}";
+    fi
+    # TEMPORARY MEASURE: PDU can halt programs so it has to be a separate process
+    if [[ ${client_list[$idx]} == "deepgreen" ]]; then
+      # Initial wait 8h to match expected experiment conditions, post wait matches typical configuration
+      client_cmd="${client_programs[$idx]} -P -f ${FORMAT} -l ${outputdir}/${client_list[$idx]}_PDU_client.${EXTENSION} -L ${outputdir}/${client_list[$idx]}_PDU_client.error -p ${POLL} -d ${DEBUG_LEVEL} -i 28800 -w ${POST_WAIT} &";
+      echo "${client_cmd}";
+      if [[ ${execution_mode} -eq 0 ]]; then
+          eval "${client_cmd}";
+      fi
     fi
 done;
 
