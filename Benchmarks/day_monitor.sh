@@ -233,7 +233,7 @@ end_timestamp=`date +"%F %T.%N %Z"`;
 echo "End sensing timestamp: ${end_timestamp}";
 
 # Perform initial analysis with reasonable defaults
-analysis_call="python3 ../Analysis/temperature_vis.py --inputs ${outputdir}/*_client.${EXTENSION} --output ${outputdir}/temp_analysis.png --min-trace-diff 1 --min-temp-enforce 0 --max-temp-enforce 100 --regex-temperatures cpu gpu --independent-y-scaling --title \"${start_timestamp}\"";
+analysis_call="python3 ../Analysis/temperature_vis.py --inputs ${outputdir}/*_client.${EXTENSION} --output ${outputdir}/temp_analysis.png --min-trace-diff 1 --min-temp-enforce 0 --max-temp-enforce 100 --regex-temperatures cpu gpu --mean-var --independent-y-scaling --title \"${start_timestamp}\"";
 echo "Sensing terminated. Performing analysis."
 echo "${analysis_call}";
 if [[ ${execution_mode} -eq 0 ]]; then
