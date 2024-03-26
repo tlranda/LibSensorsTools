@@ -1,6 +1,6 @@
 #!/bin/bash
 
-possible_targets=( "CPU" "GPU" "SUBMER" "NVME" );
+possible_targets=( "CPU" "GPU" "SUBMER" "NVME" "PDU" );
 release_types=( "Debug" "Release" );
 auto_built=0;
 if [[ $# -eq 0 ]]; then
