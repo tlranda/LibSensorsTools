@@ -19,7 +19,8 @@ execution_mode=$(( $# > 0 ));
 #bench_command="${path_to_git_repo}/Benchmarks/./multiGPU_Stream.sh";
 #bench_command="${path_to_git_repo}/Benchmarks/./multiGPU_EMOGI.sh";
 #bench_command="${path_to_git_repo}/Benchmarks/./multiGPU_DGEMM.sh";
-bench_command="${path_to_git_repo}/Benchmarks/./multiGPU_md5_cracker.sh";
+#bench_command="${path_to_git_repo}/Benchmarks/./multiGPU_md5_cracker.sh";
+bench_command="${path_to_git_repo}/Benchmarks/./multiGPU_md5_bruteforcer.sh";
 # Client flags for tools to search for
 client_flags="cgsn";
 # Arguments to control the sensing processes
