@@ -67,21 +67,32 @@ void cache_submers(void) {
 int update_submers(void) {
     if (args.debug >= DebugVerbose) args.error_log << "Update Submers" << std::endl;
     int at_below_initial_temperature = 0;
+    const long timeout = 200L;
 
     for (std::vector<std::unique_ptr<submer_cache>>::iterator i = known_submers.begin(); i != known_submers.end(); i++) {
         submer_cache* j = i->get();
         curl_easy_setopt(j->curl_handle, CURLOPT_WRITEDATA, &j->response);
+        // Ensure timeout is enforced somewhat reasonably
+        curl_easy_setopt(j->curl_handle, CURLOPT_TIMEOUT_MS, timeout);
         j->res_code = curl_easy_perform(j->curl_handle);
         if (j->res_code != CURLE_OK) {
-            args.error_log << "curl_easy_perform() failed: " << curl_easy_strerror(j->res_code) << std::endl;
-            args.error_log << "Submer information will not be logged from hence forth" << std::endl;
-            args.submer = 0;
-            submers_to_satisfy = 0;
-            return 0;
+            if (j->res_code == CURLE_OPERATION_TIMEDOUT) {
+                args.error_log << "curl_easy_perform() timedout (" << timeout << " milliseconds). Using stale data!!" << std::endl;
+            }
+            else {
+                args.error_log << "curl_easy_perform() failed: " << curl_easy_strerror(j->res_code) << " (code: " << j->res_code << ")" << std::endl;
+                args.error_log << "Submer information will not be logged from hence forth" << std::endl;
+                args.submer = 0;
+                submers_to_satisfy = 0;
+                return 0;
+            }
         }
-        j->json_data = nlohmann::json::parse(j->response)["data"];
-        free(j->response);
-        j->response = NULL;
+        else {
+            // Parse response
+            j->json_data = nlohmann::json::parse(j->response)["data"];
+            free(j->response);
+            j->response = NULL;
+        }
         if (j->json_data["temperature"] <= j->initialSubmerTemperature)
             at_below_initial_temperature++;
         if (args.debug >= DebugVerbose || update) {
