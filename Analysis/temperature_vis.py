@@ -1,4 +1,8 @@
-import argparse, json, pathlib, re
+import argparse
+import json
+import pathlib
+import re
+import warnings
 import pandas as pd, numpy as np
 import matplotlib
 import matplotlib.pyplot as plt
@@ -12,7 +16,7 @@ def build():
     fio = prs.add_argument_group("File I/O")
     fio.add_argument("--inputs", "-i", nargs="+", required=True,
                      help="CSV or JSON files to parse")
-    fio.add_argument("--baselines", "-b", nargs="*", required=True,
+    fio.add_argument("--baselines", "-b", nargs="*",
                      help="Baselines to subtract from inputs (keys based on filename and field must match!) (default: None)")
     fio.add_argument("--output", default=None,
                      help="Path to save plot to (default: display only)")
@@ -56,12 +60,13 @@ def parse(args=None, prs=None):
             print(f"Could not find input '{i}' -- omitting")
     args.inputs = inputs
     baselines = []
-    for b in args.baselines:
-        b = pathlib.Path(b)
-        if b.exists():
-            baselines.append(b)
-        else:
-            print(f"Could not find baseline '{b}' -- omitting")
+    if args.baselines is not None:
+        for b in args.baselines:
+            b = pathlib.Path(b)
+            if b.exists():
+                baselines.append(b)
+            else:
+                print(f"Could not find baseline '{b}' -- omitting")
     args.baselines = baselines
     if args.only_regex is None:
         args.only_regex = []
@@ -192,7 +197,9 @@ def get_temps_and_traces(args, paths, postprocess=True, baseline=None):
                     traces.append(traceData(record['timestamp'], f"{i.name} {record['event']} ({int(record['timestamp'])})"))
             # Post all tracked data
             for (k,v) in jtemps.items():
-                temps.append(temperatureData(v, jtimes, f"{i.name} {k.replace('_','-')}"))
+                # Sometimes the tool gets shut off, have to clip times to number of entries observed
+                observed_times = jtimes[:len(v)]
+                temps.append(temperatureData(v, observed_times, f"{i.name} {k.replace('_','-')}"))
             print(f"Loaded {sum([len(t.data) for t in temps[prev_temp_len:]])} temperature records ({len(jtemps.keys())} fields)")
             print(f"Loaded {len(traces[prev_trace_len:])} trace records")
         elif i.suffix == '.csv':
@@ -203,7 +210,11 @@ def get_temps_and_traces(args, paths, postprocess=True, baseline=None):
             if len(args.only_regex) > 0:
                 temp_cols = [_ for _ in temp_cols if any((re.match(expr, _) for expr in args.only_regex))]
             for col in temp_cols:
-                temps.append(temperatureData(data[col], data['timestamp'], f"{i.name} {col.replace('_','-')}"))
+                # Sometimes the tool gets shut off, have to clip times to number of entries observed
+                # This is probably semantically incorrect -- issue warning
+                warnings.warn("Timestamps may be overly long due to miscalibration, if you get a plotting error for mismatched x-y lengths, fix it here", UserWarning)
+                observed_times = data.iloc[:len(data[col]),'timestamp']
+                temps.append(temperatureData(data[col], observed_times, f"{i.name} {col.replace('_','-')}"))
             print(f"Loaded {sum([len(t.data) for t in temps[prev_temp_len:]])} temperature records ({len(temp_cols)} fields)")
         else:
             raise ValueError("Input files must be .json or .csv")
@@ -252,7 +263,11 @@ def main(args=None):
             if re.match(f".*{regex}.*", temps.label) is not None:
                 ax_id = idx
         ax = axs[ax_id]
-        line = ax.plot(temps.timestamps, temps.data, label=temps.label, zorder=2.01)
+        try:
+            line = ax.plot(temps.timestamps, temps.data, label=temps.label, zorder=2.01)
+        except:
+            print(temps.label)
+            raise
         legend_contents.append(line)
         if args.mean_var:
             # Show variance with less opaque color and lower zorder (behind line)
