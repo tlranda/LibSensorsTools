@@ -33,6 +33,10 @@ def build():
                      help="Maximum temperature of a trace must be lower than this value to be plotted (default: %(default)s)")
     filters.add_argument("--req-temperature-variance", action="store_false",
                      help="Temperature senses with zero standard deviation will be plotted (default: %(default)s)")
+    filters.add_argument("--no-traces", action="store_true",
+                     help="Do not plot any traces (default: %(default)s)")
+    filters.add_argument("--max-time", default=None, type=float,
+                     help="Do not plot temperature data after given timestamp (default: %(default)s)")
     plotting = prs.add_argument_group("Plotting Controls")
     plotting.add_argument("--only-regex", default=None, nargs="*",
                      help="Only plot temperatures that match these regexes (default: .*)")
@@ -44,6 +48,10 @@ def build():
                      help="Use mean and variance for items from the same host (default: %(default)s)")
     plotting.add_argument("--title", default=None,
                      help="Provide a title for the plot (default %(default)s)")
+    plotting.add_argument("--rename-labels", default=None, nargs="*",
+                     help="Map a label name to a new value (separated by colon OLD:NEW) (default: %(default)s)")
+    plotting.add_argument("--no-legend", action="store_true",
+                     help="Omit legend (default: %(default)s)")
     return prs
 
 def parse(args=None, prs=None):
@@ -72,6 +80,12 @@ def parse(args=None, prs=None):
         args.only_regex = []
     if args.regex_temperatures is None:
         args.regex_temperatures = []
+    label_mapping = dict()
+    if args.rename_labels is not None:
+        for remap in args.rename_labels:
+            label_from, label_to = remap.split(':')
+            label_mapping[label_from] = label_to
+    args.rename_labels = label_mapping
     return args
 
 class temperatureData():
@@ -162,6 +176,11 @@ def apply_baseline(data, baselines):
         ele.data = np.asarray(ele.data) - baseline_data
     return data
 
+def relabel(proposed_label, remapping):
+    if proposed_label not in remapping.keys():
+        return proposed_label
+    return remapping[proposed_label]
+
 def get_temps_and_traces(args, paths, postprocess=True, baseline=None):
     temps, traces = [], []
     for i in paths:
@@ -194,12 +213,12 @@ def get_temps_and_traces(args, paths, postprocess=True, baseline=None):
                     if len(traces) > 0 and args.min_trace_diff is not None and\
                        record['timestamp'] - traces[-1].timestamp < args.min_trace_diff:
                        continue
-                    traces.append(traceData(record['timestamp'], f"{i.name} {record['event']} ({int(record['timestamp'])})"))
+                    traces.append(traceData(record['timestamp'], relabel(f"{i.name} {record['event']} ({int(record['timestamp'])})", args.rename_labels)))
             # Post all tracked data
             for (k,v) in jtemps.items():
                 # Sometimes the tool gets shut off, have to clip times to number of entries observed
                 observed_times = jtimes[:len(v)]
-                temps.append(temperatureData(v, observed_times, f"{i.name} {k.replace('_','-')}"))
+                temps.append(temperatureData(v, observed_times, relabel(f"{i.name} {k.replace('_','-')}", args.rename_labels)))
             print(f"Loaded {sum([len(t.data) for t in temps[prev_temp_len:]])} temperature records ({len(jtemps.keys())} fields)")
             print(f"Loaded {len(traces[prev_trace_len:])} trace records")
         elif i.suffix == '.csv':
@@ -214,7 +233,7 @@ def get_temps_and_traces(args, paths, postprocess=True, baseline=None):
                 # This is probably semantically incorrect -- issue warning
                 warnings.warn("Timestamps may be overly long due to miscalibration, if you get a plotting error for mismatched x-y lengths, fix it here", UserWarning)
                 observed_times = data.iloc[:len(data[col]),'timestamp']
-                temps.append(temperatureData(data[col], observed_times, f"{i.name} {col.replace('_','-')}"))
+                temps.append(temperatureData(data[col], observed_times, relabel(f"{i.name} {col.replace('_','-')}", args.rename_labels)))
             print(f"Loaded {sum([len(t.data) for t in temps[prev_temp_len:]])} temperature records ({len(temp_cols)} fields)")
         else:
             raise ValueError("Input files must be .json or .csv")
@@ -264,7 +283,15 @@ def main(args=None):
                 ax_id = idx
         ax = axs[ax_id]
         try:
-            line = ax.plot(temps.timestamps, temps.data, label=temps.label, zorder=2.01)
+            if args.max_time is not None:
+                cutoff = np.nonzero(np.asarray(temps.timestamps) > args.max_time)[0]
+                if len(cutoff) > 0:
+                    cutoff = cutoff[0]
+                else:
+                    cutoff = len(temps.timestamps)
+                line = ax.plot(temps.timestamps[:cutoff], temps.data[:cutoff], label=temps.label, zorder=2.01)
+            else:
+                line = ax.plot(temps.timestamps, temps.data, label=temps.label, zorder=2.01)
         except:
             print(temps.label)
             raise
@@ -272,8 +299,17 @@ def main(args=None):
         if args.mean_var:
             # Show variance with less opaque color and lower zorder (behind line)
             new_color = tuple([*matplotlib.colors.to_rgb(line[0].get_color()),0.3])
-            patch = ax.fill_between(temps.timestamps, temps.low_variance, temps.high_variance,
-                                    zorder=2, color=new_color)
+            if args.max_time is not None:
+                cutoff = np.nonzero(np.asarray(temps.timestamps) > args.max_time)[0]
+                if len(cutoff) > 0:
+                    cutoff = cutoff[0]
+                else:
+                    cutoff = len(temps.timestamps)
+                patch = ax.fill_between(temps.timestamps[:cutoff], temps.low_variance[:cutoff], temps.high_variance[:cutoff],
+                                        zorder=2, color=new_color)
+            else:
+                patch = ax.fill_between(temps.timestamps, temps.low_variance, temps.high_variance,
+                                        zorder=2, color=new_color)
             legend_contents.append(patch)
         ymin[ax_id] = min(ymin[ax_id], np.min(temps.data))
         ymax[ax_id] = max(ymax[ax_id], np.max(temps.data))
@@ -294,14 +330,16 @@ def main(args=None):
             ax.set_ylim(min(ymin)*0.95, max(ymax)*1.05)
         elif (np.isfinite(ymin[idx]) and np.isfinite(ymax[idx])):
             ax.set_ylim(ymin[idx]*0.95, ymax[idx]*1.05)
-        for trace in traces:
-            vline = ax.vlines(trace.timestamp, 0, 1, transform=ax.get_xaxis_transform(), label=trace.label)
-            ax_legend_handles[idx].append(vline)
+        if not args.no_traces:
+            for trace in traces:
+                vline = ax.vlines(trace.timestamp, 0, 1, transform=ax.get_xaxis_transform(), label=trace.label)
+                ax_legend_handles[idx].append(vline)
         hmap = {Line2D: HandlerLine2D(),
                 Patch: HandlerPatch(),
                 LineCollection: CustomLineCollectionHandler()}
-        ax.legend(handler_map=hmap,
-                  loc='center left', bbox_to_anchor=(1.0, 0.5))
+        if not args.no_legend:
+            ax.legend(handler_map=hmap,
+                      loc='center left', bbox_to_anchor=(1.0, 0.5))
         if idx == 0:
             ax.set_title(args.title)
     plt.tight_layout()

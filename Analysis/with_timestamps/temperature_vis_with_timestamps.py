@@ -1,4 +1,5 @@
 import argparse, json, pathlib, re, inspect, datetime
+import copy
 import pandas as pd, numpy as np
 import matplotlib
 import matplotlib.pyplot as plt
@@ -90,7 +91,13 @@ class labeled_timestamp():
     def __repr_front__(self):
         return f"{self.tag} - {self.kind}"
     def __repr_back__(self):
-        return f"{self.axis_label}: {self.timestamp}"
+        if isinstance(self.timestamp, list):
+            return f"{self.axis_label}: {len(self.timestamp)} Timestamps"
+        else:
+            if hasattr(self, 'datetime_timestamp'):
+                return f"{self.axis_label}: {self.datetime_timestamp}"
+            else:
+                return f"{self.axis_label}: {self.timestamp}"
     def __repr__(self):
         return f"[{self.__repr_front__()}] {self.__repr_back__()}"
 
@@ -109,15 +116,15 @@ class temperatureData(labeled_timestamp):
         self.value = value
 
     def __repr__(self):
-        return super().__repr__() + "\n\t" + f"Value: {self.value}"
+        return super().__repr__() + f", N_Values: {len(self.value)}"
 
 class auxilliaryTimeStampData(labeled_timestamp):
     def __init__(self, timestamp, axis_label, kind, tag):
         # Change timestamp to datetime object (supports only milliseconds, so trim nanosecond values)
         if '.' in timestamp:
-            trim = len(timestamp.rsplit('.',1)[0])-6
+            trim = len(timestamp.rsplit('.',1)[0])+7
             if trim > 0:
-                timestamp = timestamp[:-trim]
+                timestamp = timestamp[:trim]
         timestamp = datetime.datetime.fromisoformat(timestamp)
         super().__init__(timestamp, axis_label, kind, tag)
 
@@ -137,27 +144,36 @@ class timestamp_relabeler():
     @classmethod
     def relabel_timestamps(cls, auxTimeStamps, relabel_list):
         for timeStamp in relabel_list:
+            if hasattr(timeStamp,'relabeled') and timeStamp.relabeled:
+                continue
             if not timeStamp.timestamp_str:
                 try:
                     mapped_axis_labels = cls.mapper[timeStamp.kind][timeStamp.record_class]
                 except KeyError:
                     continue
                 # Find the auxTimeStamp that goes with this
+                found = False
                 for group in auxTimeStamps:
+                    if found:
+                        break
                     for ats in group:
                         if timeStamp.kind != ats.kind or timeStamp.tag != ats.tag:
                             # Shortcut the entire group, as they should share kind
                             break
-                        if ats.axis_label in mapped_axis_labels:
+                        if ats.axis_label not in mapped_axis_labels:
                             # Seek matching record class
                             continue
                         # Align timestamps
-                        timeStamp.numeric_timestamp = timeStamp.timestamp
-                        timeStamp.timestamp = ats.timestamp
+                        timeStamp.datetime_timestamp = ats.timestamp
+                        timeStamp.old_axis_label = timeStamp.axis_label
+                        timeStamp.axis_label = timeStamp.axis_label.split('(')[0]+f"({timeStamp.datetime_timestamp})"
+                        timeStamp.relabeled = True
+                        found = True
+                        break
         #print("\n".join([str(_) for _ in relabel_list]))
 
 class auxilliary_regex_finder():
-    timestamp_regex = r"([0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}.?[0-9]*)"
+    timestamp_regex = r"([0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}.?[0-9]*)[ EDST]*"
     bracket_timestamp_regex = r"\["+timestamp_regex+r"\]"
 
     program_start = re.compile(bracket_timestamp_regex+r" The program lives")
@@ -170,7 +186,9 @@ class auxilliary_regex_finder():
     server_transition_1 = re.compile(bracket_timestamp_regex+r" Child process exits with status [0-9]+")
     server_transition_2 = re.compile(bracket_timestamp_regex+r" Child process caught/terminated by signal [0-9]+")
 
+    nohup_start = re.compile(r"Start timestamp: "+timestamp_regex)
     nohup_event = re.compile(timestamp_regex)
+    nohup_end = re.compile(r"End sensing timestamp: "+timestamp_regex)
 
     lookups = {'client':
                 {'program_start': program_start,
@@ -184,7 +202,9 @@ class auxilliary_regex_finder():
                  'server_transition_2': server_transition_2,
                  'program_halt': program_halt,},
                'nohup':
-                {'nohup_event': nohup_event,},
+                {'nohup_start': nohup_start,
+                 'nohup_event': nohup_event,
+                 'nohup_end': nohup_end,},
               }
     @classmethod
     def classify_line(cls, expect_kind, line, tag):
@@ -273,6 +293,7 @@ def get_temps_and_traces(args):
         client_times = []
         server_times = []
         nohup_times = []
+        print('-----')
         for record in aux:
             inst = auxilliary_regex_finder.classify_line(a.name, record, a.stem)
             if inst is not None:
@@ -283,14 +304,45 @@ def get_temps_and_traces(args):
                 elif inst.kind == 'nohup':
                     nohup_times.append(inst)
         print(a.name, ", ".join([_ for _ in map(lambda x: f"{retrieve_name(x,2)} = {len(x)}", [client_times,server_times,nohup_times]) if int(_.split('=')[1].lstrip()) > 0]))
-        print("\n".join([str(_) for _ in client_times]))
-        print("\n".join([str(_) for _ in server_times]))
-        print("\n".join([str(_) for _ in nohup_times]))
-        print("-----")
+        if len(client_times) > 0:
+            non_polling_client_times = [_ for _ in client_times if _.axis_label != 'client_poll']
+            print("Non-polling client times: "+"\n".join([str(_) for _ in non_polling_client_times]))
+            print(f"Number of Client Polls: {len(client_times)-len(non_polling_client_times)}")
+        if len(server_times) > 0:
+            print("Server Times: "+"\n".join([str(_) for _ in server_times]))
+        if len(nohup_times) > 0:
+            print("Nohup Times:  "+"\n".join([str(_) for _ in nohup_times]))
         # TODO: Make timestampData and use it to pin the traceData and tempData relative times
         timestamp_relabeler.relabel_timestamps([client_times, server_times, nohup_times], traces)
-    import pdb
-    pdb.set_trace()
+    print("-----")
+    # Extract bonus traces from various times
+    # Attempt to add the application halt as a trace value
+    if len(server_times) > 0 and len(traces) > 0:
+        for stime in server_times:
+            if stime.axis_label == 'server_transition_1':
+                # Time relative to shutdown
+                axis_stime = copy.deepcopy(stime)
+                axis_stime.timestamp = traces[0].timestamp-(traces[0].datetime_timestamp-stime.timestamp).total_seconds()
+                axis_stime.axis_label = f"Program Halt ({stime.timestamp})"
+                traces.append(axis_stime)
+    # Brute force add program start time
+    if hasattr(traces[0],'datetime_timestamp'):
+        traces.append(traceData(1800,f"Program Start ({traces[0].datetime_timestamp-datetime.timedelta(seconds=traces[0].timestamp-(30*60))})","Program Start","arbitrary","arbitrary_injection"))
+    # Reverse traces list
+    traces = reversed(traces)
+        #def __init__(self, timestamp, axis_label, record_class, kind, tag):
+        # Align timestamps
+        #timeStamp.datetime_timestamp = ats.timestamp
+        #timeStamp.old_axis_label = timeStamp.axis_label
+        #timeStamp.axis_label = timeStamp.axis_label.split('(')[0]+f"({timeStamp.datetime_timestamp})"
+        #timeStamp.relabeled = True
+        #traces.append(traceData(record['timestamp'], f"{i.name} {record['event']} ({int(record['timestamp'])})", record['event'], detect_kind_from_path(i.name), i.stem))
+    """
+    Server Times: [deepgreen_server - server] program_start: 2024-03-15 08:10:11.284732
+[deepgreen_server - server] server_initialize: 2024-03-15 08:10:11.842104
+[deepgreen_server - server] server_transition_1: 2024-03-15 15:55:02.131895
+[deepgreen_server - server] program_halt: 2024-03-16 15:55:03.807450
+    """
     return temps, traces
 
 def main(args=None):
@@ -318,14 +370,14 @@ def main(args=None):
         axs = [axs]
     ymin, ymax = np.inf * np.ones(n_plot_groups), -np.inf * np.ones(n_plot_groups)
     for temps in temperature_data:
-        if args.min_temp_enforce is not None and np.max(temps.data) < args.min_temp_enforce:
-            print(f"{temps.label} dropped due to minimum temperature enforcement (Max temp: {np.max(temps.data)})")
+        if args.min_temp_enforce is not None and np.max(temps.value) < args.min_temp_enforce:
+            print(f"{temps.label} dropped due to minimum temperature enforcement (Max temp: {np.max(temps.value)})")
             continue
-        if args.max_temp_enforce is not None and np.min(temps.data) > args.max_temp_enforce:
-            print(f"{temps.label} dropped due to maximum temperature enforcement (Min temp: {np.min(temps.data)})")
+        if args.max_temp_enforce is not None and np.min(temps.value) > args.max_temp_enforce:
+            print(f"{temps.label} dropped due to maximum temperature enforcement (Min temp: {np.min(temps.value)})")
             continue
-        if args.req_temperature_variance and np.std(temps.data) == 0:
-            print(f"{temps.label} dropped due to no variance in temperature reading (Constant temperature: {np.mean(temps.data)})")
+        if args.req_temperature_variance and np.std(temps.value) == 0:
+            print(f"{temps.label} dropped due to no variance in temperature reading (Constant temperature: {np.mean(temps.value)})")
             continue
         # Axis identification
         ax_id = n_plot_groups-1
@@ -333,9 +385,9 @@ def main(args=None):
             if re.match(f".*{regex}.*", temps.label) is not None:
                 ax_id = idx
         ax = axs[ax_id]
-        ax.plot(temps.timestamps, temps.data, label=temps.label)
-        local_ymin = np.min(temps.data)
-        local_ymax = np.max(temps.data)
+        ax.plot(temps.timestamp, temps.value, label=temps.axis_label)
+        local_ymin = np.min(temps.value)
+        local_ymax = np.max(temps.value)
         ymin[ax_id] = min(ymin[ax_id], local_ymin)
         ymax[ax_id] = max(ymax[ax_id], local_ymax)
         ax.set_xlabel('Time (seconds)')
@@ -349,16 +401,16 @@ def main(args=None):
         elif (np.isfinite(ymin[idx]) and np.isfinite(ymax[idx])):
             ax.set_ylim(ymin[idx]*0.95, ymax[idx]*1.05)
         for trace in traces:
-            ax.vlines(trace.timestamp, 0, 1, transform=ax.get_xaxis_transform(), label=trace.label)
+            ax.vlines(trace.timestamp, 0, 1, transform=ax.get_xaxis_transform(), label=trace.axis_label)
         if not args.no_legend:
             ax.legend(loc='center left', bbox_to_anchor=(1.0, 0.5))
         if idx == 0:
             ax.set_title(args.title)
     plt.tight_layout()
-    #if args.output is None:
-    #    plt.show()
-    #else:
-    #    fig.savefig(args.output, format=args.format, dpi=args.dpi)
+    if args.output is None:
+        plt.show()
+    else:
+        fig.savefig(args.output, format=args.format, dpi=args.dpi)
 
 if __name__ == '__main__':
     main()
