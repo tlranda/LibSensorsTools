@@ -21,7 +21,9 @@ execution_mode=$(( $# > 0 ));
 #bench_command="${path_to_git_repo}/Benchmarks/./multiGPU_DGEMM.sh";
 #bench_command="${path_to_git_repo}/Benchmarks/./multiGPU_md5_cracker.sh";
 #bench_command="${path_to_git_repo}/Benchmarks/./multiGPU_md5_bruteforce.sh";
-bench_command="${path_to_git_repo}/Benchmarks/./multinode_npb_dt.sh";
+#bench_command="${path_to_git_repo}/Benchmarks/./multinode_npb_dt.sh";
+#bench_command="${path_to_git_repo}/Benchmarks/./multinode_npb_is.sh";
+bench_command="${path_to_git_repo}/Benchmarks/./multinode_npb_ep.sh";
 # Client flags for tools to search for
 client_flags="cgsn";
 # Arguments to control the sensing processes
@@ -37,6 +39,8 @@ outputdir="day_monitor/${today}";
 unique_subdir=1;
 # Infinite loop the command (0=True, 1=False)
 infinite_loop=0;
+# Shutoff for infinite loop (0=Manual, >0 is an actual timeout)
+infinite_timeout=""; # 8 hours (ie: 8am-4pm)
 
 # Pair the server name and IP (name used for SSH-command launching, IP given to all clients)"
 server_list=( "deepgreen" );
@@ -170,6 +174,9 @@ echo "Start timestamp: ${start_timestamp}";
 # Modify the experiment for infinite looping
 if [[ ${infinite_loop} -eq 0 ]]; then
     bench_command="python3 ${path_to_git_repo}/Benchmarks/pyloop.py ${bench_command}";
+    if [[ -n ${infinite_timeout} ]]; then
+        bench_command="timeout ${infinite_timeout} ${bench_command}";
+    fi
 fi
 
 # Set up servers
