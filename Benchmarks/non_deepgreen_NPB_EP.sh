@@ -2,7 +2,7 @@
 
 module add open-mpi;
 
-mpi_call="time mpiexec -np 128 -host deepgreen:32,n05:48,n07:48"
+mpi_call="time mpiexec -np 96 -host n05:48,n07:48"
 stream_bench="/tmp/./ep.E.x"
 stream_args="";
 # Expect ~14m per execution

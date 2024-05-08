@@ -3,9 +3,9 @@
 module add open-mpi;
 
 mpi_call="time mpiexec -np 128 -host deepgreen:32,n05:48,n07:48"
-stream_bench="/tmp/./ep.E.x"
+stream_bench="benchmark_links/NPB3.4.2/NPB3.4-MPI/./bin/is.D.x"
 stream_args="";
-# Expect ~14m per execution
+# Expect ~6m per execution
 n_times=1; # Default
 if [[ $# -eq 1 ]]; then
     echo "Setting n_times to $1";
@@ -25,6 +25,7 @@ for (( i=0; i<${n_times}; ++i )); do
     IFS="^";
     for cmd in ${composed[@]}; do
         echo "${cmd}";
+        which mpiexec;
         eval "${cmd}";
     done;
     # Ensure the end timestamp looks right in the data

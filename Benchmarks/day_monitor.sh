@@ -23,7 +23,10 @@ execution_mode=$(( $# > 0 ));
 #bench_command="${path_to_git_repo}/Benchmarks/./multiGPU_md5_bruteforce.sh";
 #bench_command="${path_to_git_repo}/Benchmarks/./multinode_npb_dt.sh";
 #bench_command="${path_to_git_repo}/Benchmarks/./multinode_npb_is.sh";
-bench_command="${path_to_git_repo}/Benchmarks/./multinode_npb_ep.sh";
+#bench_command="${path_to_git_repo}/Benchmarks/./multinode_npb_ep.sh";
+#bench_command="${path_to_git_repo}/Benchmarks/./multinode_hpcc.sh";
+#bench_command="${path_to_git_repo}/Benchmarks/./run_two_pyloops.sh";
+bench_command="${path_to_git_repo}/Benchmarks/./multiGPU_mlperf_inference_resnet50.sh";
 # Client flags for tools to search for
 client_flags="cgsn";
 # Arguments to control the sensing processes
@@ -38,7 +41,7 @@ outputdir="day_monitor/${today}";
 # Automatically make a subdirectory to prevent clobbering repeated runs (0=True, 1=False)
 unique_subdir=1;
 # Infinite loop the command (0=True, 1=False)
-infinite_loop=0;
+infinite_loop=1;
 # Shutoff for infinite loop (0=Manual, >0 is an actual timeout)
 infinite_timeout=""; # 8 hours (ie: 8am-4pm)
 
