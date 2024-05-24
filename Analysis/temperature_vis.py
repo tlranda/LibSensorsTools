@@ -42,6 +42,8 @@ def build():
                      help="Only plot temperatures that match these regexes (default: .*)")
     plotting.add_argument("--regex-temperatures", default=None, nargs="*",
                      help="Group temperatures that match each given regex (default: all temperatures)")
+    plotting.add_argument("--non-temperatures", default=None, nargs="*",
+                     help="Also plot these non-temperature values on a subplot together (default: None)")
     plotting.add_argument("--independent-y-scaling", action="store_true",
                      help="Give all plots independent y-axis scaling (default: constant between plots)")
     plotting.add_argument("--mean-var", action="store_true",
@@ -80,6 +82,8 @@ def parse(args=None, prs=None):
         args.only_regex = []
     if args.regex_temperatures is None:
         args.regex_temperatures = []
+    if args.non_temperatures is None:
+        args.non_temperatures = []
     label_mapping = dict()
     if args.rename_labels is not None:
         for remap in args.rename_labels:
@@ -88,18 +92,17 @@ def parse(args=None, prs=None):
     args.rename_labels = label_mapping
     return args
 
-class temperatureData():
-    def __init__(self, data, timestamps, label, low_variance=None, high_variance=None):
-        self.data = data
-        self.timestamps = timestamps
-        self.label = label
-        self.low_variance = low_variance
-        self.high_variance = high_variance
-
-class traceData():
+class TimedLabel():
     def __init__(self, timestamp, label):
         self.timestamp = timestamp
         self.label = label
+
+class VarianceData(TimedLabel):
+    def __init__(self, timestamps, label, data, low_variance=None, high_variance=None):
+        super().__init__(timestamps, label)
+        self.data = data
+        self.low_variance = low_variance
+        self.high_variance = high_variance
 
 class CustomLineCollectionHandler(HandlerLineCollection):
     def create_artists(self, legend, orig_handle, xdescent, ydescent, width, height, fontsize, trans):
@@ -125,13 +128,17 @@ def prune_temps(args, temps):
         new_temps.append(temp)
     return new_temps
 
-def mean_var_edit(temps):
+def mean_var_edit(temps, latekey=False):
     new_temps = dict()
     # We group on the labels according to the format:
     # Filename tool[-ID-other-information]
+    # If latekey==True, we expect:
+    # Filename tool[-ID]-other-part-of-tool
     for temp in temps:
         fname, tool_id = temp.label.split(' ',1)
         tool, identifier, other = tool_id.split('-',2)
+        if latekey:
+            tool += f"-{other}"
         key = (fname, tool)
         if key in new_temps.keys():
             new_temps[key].append(temp)
@@ -142,7 +149,7 @@ def mean_var_edit(temps):
         lens = np.asarray([len(_.data) for _ in new_temps[key]])
         max_idx = np.argmax(lens)
         maxlen = lens[max_idx]
-        timestamps = new_temps[key][max_idx].timestamps
+        timestamps = new_temps[key][max_idx].timestamp
         # Pad out data to be equal length
         # This should not be necessary as observations should be uniform, but I'm leaving this in as
         # an abundance of caution / freedom to change design later
@@ -154,8 +161,8 @@ def mean_var_edit(temps):
         meandata = data.mean(axis=0)
         low_variance = data.min(axis=0)
         high_variance = data.max(axis=0)
-        new_temps[key] = temperatureData(data=meandata, timestamps=timestamps, label=" ".join(key),
-                                         low_variance=low_variance, high_variance=high_variance)
+        new_temps[key] = VarianceData(timestamps, label=" ".join(key), data=meandata,
+                                      low_variance=low_variance, high_variance=high_variance)
     return list(new_temps.values())
 
 def apply_baseline(data, baselines):
@@ -182,7 +189,7 @@ def relabel(proposed_label, remapping):
     return remapping[proposed_label]
 
 def get_temps_and_traces(args, paths, postprocess=True, baseline=None):
-    temps, traces = [], []
+    temps, traces, others = [], [], []
     for i in paths:
         prev_temp_len = len(temps)
         prev_trace_len = len(traces)
@@ -192,9 +199,12 @@ def get_temps_and_traces(args, paths, postprocess=True, baseline=None):
             print(f"Loaded JSON {i}")
             jtemps = dict()
             jtimes = []
+            non_temps = dict()
             skip_events = ['initialization', 'poll-update']
             for record in j:
-                if 'event' not in record or record['event'] in skip_events:
+                if 'event' not in record:
+                    continue
+                if record['event'] in skip_events:
                     continue
                 if record['event'] == 'poll-data':
                     # Find all fields we'll track and attach it
@@ -209,16 +219,25 @@ def get_temps_and_traces(args, paths, postprocess=True, baseline=None):
                         else:
                             jtemps[field] = [record[field]]
                     jtimes.append(record['timestamp'])
+                    # Look for non-temperatures as well
+                    for field in record:
+                        if any((re.match(expr, field) for expr in args.non_temperatures)):
+                            if field not in non_temps:
+                                non_temps[field] = []
+                            non_temps[field].append(record[field])
                 else: # Trace event
                     if len(traces) > 0 and args.min_trace_diff is not None and\
                        record['timestamp'] - traces[-1].timestamp < args.min_trace_diff:
                        continue
-                    traces.append(traceData(record['timestamp'], relabel(f"{i.name} {record['event']} ({int(record['timestamp'])})", args.rename_labels)))
+                    traces.append(TimedLabel(record['timestamp'], relabel(f"{i.name} {record['event']} ({int(record['timestamp'])})", args.rename_labels)))
             # Post all tracked data
             for (k,v) in jtemps.items():
                 # Sometimes the tool gets shut off, have to clip times to number of entries observed
                 observed_times = jtimes[:len(v)]
-                temps.append(temperatureData(v, observed_times, relabel(f"{i.name} {k.replace('_','-')}", args.rename_labels)))
+                temps.append(VarianceData(observed_times, relabel(f"{i.name} {k.replace('_','-')}", args.rename_labels), v))
+            for (k,v) in non_temps.items():
+                observed_times = jtimes[:len(v)]
+                others.append(VarianceData(observed_times, relabel(f"{i.name} {k.replace('_','-')}", args.rename_labels),v))
             print(f"Loaded {sum([len(t.data) for t in temps[prev_temp_len:]])} temperature records ({len(jtemps.keys())} fields)")
             print(f"Loaded {len(traces[prev_trace_len:])} trace records")
         elif i.suffix == '.csv':
@@ -233,7 +252,7 @@ def get_temps_and_traces(args, paths, postprocess=True, baseline=None):
                 # This is probably semantically incorrect -- issue warning
                 warnings.warn("Timestamps may be overly long due to miscalibration, if you get a plotting error for mismatched x-y lengths, fix it here", UserWarning)
                 observed_times = data.iloc[:len(data[col]),'timestamp']
-                temps.append(temperatureData(data[col], observed_times, relabel(f"{i.name} {col.replace('_','-')}", args.rename_labels)))
+                temps.append(VarianceData(observed_times, relabel(f"{i.name} {col.replace('_','-')}", args.rename_labels), data[col]))
             print(f"Loaded {sum([len(t.data) for t in temps[prev_temp_len:]])} temperature records ({len(temp_cols)} fields)")
         else:
             raise ValueError("Input files must be .json or .csv")
@@ -243,15 +262,16 @@ def get_temps_and_traces(args, paths, postprocess=True, baseline=None):
             temps = apply_baseline(temps, baseline)
         if args.mean_var:
             temps = mean_var_edit(temps)
-    return temps, traces
+            others = mean_var_edit(others, latekey=True)
+    return temps, traces, others
 
 def main(args=None):
     args = parse(args)
     if len(args.baselines) == 0:
         baseline_temperatures = None
     else:
-        baseline_temperatures, _ = get_temps_and_traces(args, args.baselines, postprocess=False)
-    temperature_data, traces = get_temps_and_traces(args, args.inputs, postprocess=True, baseline=baseline_temperatures)
+        baseline_temperatures, _, _ = get_temps_and_traces(args, args.baselines, postprocess=False)
+    temperature_data, traces, others = get_temps_and_traces(args, args.inputs, postprocess=True, baseline=baseline_temperatures)
     # Set number of plot groups based on actual loaded data matching regexes rather than user-faith assumption
     if len(args.regex_temperatures) > 0:
         presence = np.zeros(len(args.regex_temperatures), dtype=int)
@@ -269,6 +289,8 @@ def main(args=None):
         n_plot_groups = sum(presence) + bonus
     else:
         n_plot_groups = 1
+    if len(args.non_temperatures) > 0:
+        n_plot_groups += 1
     fig, axs = plt.subplots(n_plot_groups, 1, figsize=(12,6 * n_plot_groups))
     if n_plot_groups == 1:
         axs = [axs]
@@ -278,20 +300,22 @@ def main(args=None):
         legend_contents = []
         # Axis identification
         ax_id = n_plot_groups-1
+        if len(args.non_temperatures) > 0:
+            ax_id -= 1
         for idx, regex in enumerate(args.regex_temperatures):
             if re.match(f".*{regex}.*", temps.label) is not None:
                 ax_id = idx
         ax = axs[ax_id]
         try:
             if args.max_time is not None:
-                cutoff = np.nonzero(np.asarray(temps.timestamps) > args.max_time)[0]
+                cutoff = np.nonzero(np.asarray(temps.timestamp) > args.max_time)[0]
                 if len(cutoff) > 0:
                     cutoff = cutoff[0]
                 else:
-                    cutoff = len(temps.timestamps)
-                line = ax.plot(temps.timestamps[:cutoff], temps.data[:cutoff], label=temps.label, zorder=2.01)
+                    cutoff = len(temps.timestamp)
+                line = ax.plot(temps.timestamp[:cutoff], temps.data[:cutoff], label=temps.label, zorder=2.01)
             else:
-                line = ax.plot(temps.timestamps, temps.data, label=temps.label, zorder=2.01)
+                line = ax.plot(temps.timestamp, temps.data, label=temps.label, zorder=2.01)
         except:
             print(temps.label)
             raise
@@ -300,15 +324,15 @@ def main(args=None):
             # Show variance with less opaque color and lower zorder (behind line)
             new_color = tuple([*matplotlib.colors.to_rgb(line[0].get_color()),0.3])
             if args.max_time is not None:
-                cutoff = np.nonzero(np.asarray(temps.timestamps) > args.max_time)[0]
+                cutoff = np.nonzero(np.asarray(temps.timestamp) > args.max_time)[0]
                 if len(cutoff) > 0:
                     cutoff = cutoff[0]
                 else:
-                    cutoff = len(temps.timestamps)
-                patch = ax.fill_between(temps.timestamps[:cutoff], temps.low_variance[:cutoff], temps.high_variance[:cutoff],
+                    cutoff = len(temps.timestamp)
+                patch = ax.fill_between(temps.timestamp[:cutoff], temps.low_variance[:cutoff], temps.high_variance[:cutoff],
                                         zorder=2, color=new_color)
             else:
-                patch = ax.fill_between(temps.timestamps, temps.low_variance, temps.high_variance,
+                patch = ax.fill_between(temps.timestamp, temps.low_variance, temps.high_variance,
                                         zorder=2, color=new_color)
             legend_contents.append(patch)
         ymin[ax_id] = min(ymin[ax_id], np.min(temps.data))
@@ -325,7 +349,47 @@ def main(args=None):
             ax_legend_handles[ax_id].extend(legend_contents)
         else:
             ax_legend_handles[ax_id] = legend_contents
+    for other_data in others:
+        legend_contents = []
+        ax = axs[-1]
+        try:
+            if args.max_time is not None:
+                cutoff = np.nonzero(np.asarray(other_data.timestamp) > args.max_time)[0]
+                if len(cutoff) > 0:
+                    cutoff = cutoff[0]
+                else:
+                    cutoff = len(other_data.timestamp)
+                line = ax.plot(other_data.timestamp[:cutoff], other_data.data[:cutoff], label=other_data.label, zorder=2.01)
+            else:
+                line = ax.plot(other_data.timestamp, other_data.data, label=other_data.label, zorder=2.01)
+        except:
+            print(other_data.label)
+            raise
+        legend_contents.append(line)
+        if args.mean_var:
+            # Show variance with less opaque color and lower zorder (behind line)
+            new_color = tuple([*matplotlib.colors.to_rgb(line[0].get_color()),0.3])
+            if args.max_time is not None:
+                cutoff = np.nonzero(np.asarray(other_data.timestamp) > args.max_time)[0]
+                if len(cutoff) > 0:
+                    cutoff = cutoff[0]
+                else:
+                    cutoff = len(other_data.timestamp)
+                patch = ax.fill_between(other_data.timestamp[:cutoff], other_data.low_variance[:cutoff], other_data.high_variance[:cutoff],
+                                        zorder=2, color=new_color)
+            else:
+                patch = ax.fill_between(other_data.timestamp, other_data.low_variance, other_data.high_variance,
+                                        zorder=2, color=new_color)
+            legend_contents.append(patch)
     for idx, ax in enumerate(axs):
+        if len(args.non_temperatures) > 0 and idx == len(axs)-1:
+            hmap = {Line2D: HandlerLine2D(),
+                    Patch: HandlerPatch(),
+                    LineCollection: CustomLineCollectionHandler()}
+            if not args.no_legend:
+                ax.legend(handler_map=hmap,
+                          loc='center left', bbox_to_anchor=(1.0, 0.5))
+            continue
         if not args.independent_y_scaling and (np.isfinite(min(ymin)) and np.isfinite(max(ymax))):
             ax.set_ylim(min(ymin)*0.95, max(ymax)*1.05)
         elif (np.isfinite(ymin[idx]) and np.isfinite(ymax[idx])):
