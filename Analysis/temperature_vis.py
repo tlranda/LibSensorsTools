@@ -38,6 +38,8 @@ def build():
     filters.add_argument("--max-time", default=None, type=float,
                      help="Do not plot temperature data after given timestamp (default: %(default)s)")
     plotting = prs.add_argument_group("Plotting Controls")
+    plotting.add_argument("--plot-type", choices=['temperature','rq1','rq2','rq3'], default='temperature',
+                     help="Plotting logic to utilize (default: %(default)s)")
     plotting.add_argument("--only-regex", default=None, nargs="*",
                      help="Only plot temperatures that match these regexes (default: .*)")
     plotting.add_argument("--regex-temperatures", default=None, nargs="*",
@@ -51,9 +53,13 @@ def build():
     plotting.add_argument("--title", default=None,
                      help="Provide a title for the plot (default %(default)s)")
     plotting.add_argument("--rename-labels", default=None, nargs="*",
-                     help="Map a label name to a new value (separated by colon OLD:NEW) (default: %(default)s)")
+                     help="Map a field label name to a new value (separated by colon OLD:NEW) (default: %(default)s)")
+    plotting.add_argument("--rename-files", action="store_true",
+                     help="Cleaner names for files (default: %(default)s)")
     plotting.add_argument("--no-legend", action="store_true",
                      help="Omit legend (default: %(default)s)")
+    plotting.add_argument("--x-range", nargs="*", type=float, default=None,
+                     help="Set manual x-axis range (default: complete axis, if only one value is given, it is assumed to be rightmost extent)")
     return prs
 
 def parse(args=None, prs=None):
@@ -90,12 +96,18 @@ def parse(args=None, prs=None):
             label_from, label_to = remap.split(':')
             label_mapping[label_from] = label_to
     args.rename_labels = label_mapping
+    if args.x_range is not None:
+        if type(args.x_range) is not list:
+            args.x_range = [args.x_range]
     return args
 
 class TimedLabel():
     def __init__(self, timestamp, label):
         self.timestamp = timestamp
         self.label = label
+
+    def __str__(self):
+        return self.label
 
 class VarianceData(TimedLabel):
     def __init__(self, timestamps, label, data, low_variance=None, high_variance=None):
@@ -183,6 +195,14 @@ def apply_baseline(data, baselines):
         ele.data = np.asarray(ele.data) - baseline_data
     return data
 
+def refile(plib_name, args):
+    if not args.rename_files:
+        return plib_name
+    name = plib_name.rsplit('.',1)[0]
+    if name.endswith('_client'):
+        return name.replace("_"," ")[:-7]
+    return name.replace("_"," ")
+
 def relabel(proposed_label, remapping):
     if proposed_label not in remapping.keys():
         return proposed_label
@@ -229,15 +249,15 @@ def get_temps_and_traces(args, paths, postprocess=True, baseline=None):
                     if len(traces) > 0 and args.min_trace_diff is not None and\
                        record['timestamp'] - traces[-1].timestamp < args.min_trace_diff:
                        continue
-                    traces.append(TimedLabel(record['timestamp'], relabel(f"{i.name} {record['event']} ({int(record['timestamp'])})", args.rename_labels)))
+                    traces.append(TimedLabel(record['timestamp'], relabel(f"{refile(i.name,args)} {record['event']} ({int(record['timestamp'])})", args.rename_labels)))
             # Post all tracked data
             for (k,v) in jtemps.items():
                 # Sometimes the tool gets shut off, have to clip times to number of entries observed
                 observed_times = jtimes[:len(v)]
-                temps.append(VarianceData(observed_times, relabel(f"{i.name} {k.replace('_','-')}", args.rename_labels), v))
+                temps.append(VarianceData(observed_times, relabel(f"{refile(i.name,args)} {k.replace('_','-')}", args.rename_labels), v))
             for (k,v) in non_temps.items():
                 observed_times = jtimes[:len(v)]
-                others.append(VarianceData(observed_times, relabel(f"{i.name} {k.replace('_','-')}", args.rename_labels),v))
+                others.append(VarianceData(observed_times, relabel(f"{refile(i.name,args)} {k.replace('_','-')}", args.rename_labels),v))
             print(f"Loaded {sum([len(t.data) for t in temps[prev_temp_len:]])} temperature records ({len(jtemps.keys())} fields)")
             print(f"Loaded {len(traces[prev_trace_len:])} trace records")
         elif i.suffix == '.csv':
@@ -252,7 +272,7 @@ def get_temps_and_traces(args, paths, postprocess=True, baseline=None):
                 # This is probably semantically incorrect -- issue warning
                 warnings.warn("Timestamps may be overly long due to miscalibration, if you get a plotting error for mismatched x-y lengths, fix it here", UserWarning)
                 observed_times = data.iloc[:len(data[col]),'timestamp']
-                temps.append(VarianceData(observed_times, relabel(f"{i.name} {col.replace('_','-')}", args.rename_labels), data[col]))
+                temps.append(VarianceData(observed_times, relabel(f"{refile(i.name,args)} {col.replace('_','-')}", args.rename_labels), data[col]))
             print(f"Loaded {sum([len(t.data) for t in temps[prev_temp_len:]])} temperature records ({len(temp_cols)} fields)")
         else:
             raise ValueError("Input files must be .json or .csv")
@@ -265,13 +285,7 @@ def get_temps_and_traces(args, paths, postprocess=True, baseline=None):
             others = mean_var_edit(others, latekey=True)
     return temps, traces, others
 
-def main(args=None):
-    args = parse(args)
-    if len(args.baselines) == 0:
-        baseline_temperatures = None
-    else:
-        baseline_temperatures, _, _ = get_temps_and_traces(args, args.baselines, postprocess=False)
-    temperature_data, traces, others = get_temps_and_traces(args, args.inputs, postprocess=True, baseline=baseline_temperatures)
+def temperature_plots(temperature_data, traces, others, baseline_temperatures, args):
     # Set number of plot groups based on actual loaded data matching regexes rather than user-faith assumption
     if len(args.regex_temperatures) > 0:
         presence = np.zeros(len(args.regex_temperatures), dtype=int)
@@ -365,6 +379,9 @@ def main(args=None):
         except:
             print(other_data.label)
             raise
+        ax.yaxis.set_minor_locator(matplotlib.ticker.AutoMinorLocator(5))
+        ax.grid(True, which='minor', linestyle='--', axis='y', color='lightgray')
+        ax.grid(True, which='major', linestyle='-', axis='y')
         legend_contents.append(line)
         if args.mean_var:
             # Show variance with less opaque color and lower zorder (behind line)
@@ -386,6 +403,10 @@ def main(args=None):
             hmap = {Line2D: HandlerLine2D(),
                     Patch: HandlerPatch(),
                     LineCollection: CustomLineCollectionHandler()}
+            if not args.no_traces:
+                for trace in traces:
+                    vline = ax.vlines(trace.timestamp, 0, 1, transform=ax.get_xaxis_transform(), label=trace.label)
+                    #ax_legend_handles[idx].append(vline)
             if not args.no_legend:
                 ax.legend(handler_map=hmap,
                           loc='center left', bbox_to_anchor=(1.0, 0.5))
@@ -406,6 +427,83 @@ def main(args=None):
                       loc='center left', bbox_to_anchor=(1.0, 0.5))
         if idx == 0:
             ax.set_title(args.title)
+    return fig, axs
+
+def rq1_plots(temperature_data, traces, others, baseline_temperatures, args):
+    n_plot_groups = 1
+    fig, axs = plt.subplots(n_plot_groups, 1, figsize=(12,6 * n_plot_groups))
+    if n_plot_groups == 1:
+        axs = [axs]
+    ymin, ymax = np.inf * np.ones(n_plot_groups), -np.inf * np.ones(n_plot_groups)
+    ax_legend_handles = dict()
+    # Additional data processing: Detect Heat Deltas up until heated period ends
+    submer_idx = [idx for idx, val in enumerate(temperature_data) if 'submer' in str(val)]
+    if len(submer_idx) != 1:
+        raise ValueError("No Submer data detected for heat analysis or ambiguous multiple Submer data")
+    submer_idx = submer_idx[0]
+    submer_times = np.asarray(temperature_data[submer_idx].timestamp)
+    initial_wait_timestamp = [t.timestamp for t in traces if 'initial-wait-end' in str(t)][0]
+    wrapped_command_end = [t.timestamp for t in traces if 'wrapped-command-end' in str(t)][0]
+    # Period 1: Idling initial wait
+    initial_wait_idx = (0, np.where(submer_times > initial_wait_timestamp)[0][0])
+    # Period 2: Application activity
+    application_activity_idx = (initial_wait_idx[1], np.where(submer_times > wrapped_command_end)[0][0])
+    # Peroid 3: Cooldown activity
+    cooldown_idx = (application_activity_idx[1], len(submer_times))
+    # For each period, identify delta-extents
+    # Periods 1-2 should be rising, period 3 falling up until some point, then rising
+    start, end = application_activity_idx
+    submer_temps = np.asarray(temperature_data[submer_idx].data[start:end])
+    temp_diffs = np.diff(submer_temps)
+    changing_idx = [idx for idx, val in enumerate(temp_diffs) if val != 0]
+    subset_tds = temp_diffs[changing_idx]
+    metachange_idx = []
+    initial_dir = np.sign(subset_tds[0])
+    jiggle_duration = 10
+    jiggle_tolerance = 3
+    skip = 0
+    for idx in range(len(changing_idx)):
+        if skip > 0:
+            skip -= 1
+            continue
+        current_dir = np.sign(temp_diffs[idx])
+        if current_dir == initial_dir:
+            continue
+        else:
+            # Look forward to see if it continues or just jiggles
+            jiggle_sum = np.sign(subset_tds[idx:min(len(subset_tds),idx+jiggle_duration)]).sum()
+            if jiggle_sum < jiggle_tolerance:
+                skip = jiggle_duration
+            else:
+                # Mark change in direction HERE
+                print(f"Changing direction at {idx} ({submer_times[changing_idx[idx]]}s) as {jiggle_sum} >= {jiggle_tolerance}")
+                initial_dir = np.sign(subset_tds[idx])
+                metachange_idx.append(idx)
+    changes = np.asarray(changing_idx)[metachange_idx]
+    import pdb
+    pdb.set_trace()
+    return fig, axs
+
+def main(args=None):
+    args = parse(args)
+    if len(args.baselines) == 0:
+        baseline_temperatures = None
+    else:
+        baseline_temperatures, _, _ = get_temps_and_traces(args, args.baselines, postprocess=False)
+    temperature_data, traces, others = get_temps_and_traces(args, args.inputs, postprocess=True, baseline=baseline_temperatures)
+    if args.plot_type == 'temperature':
+        fig, axs = temperature_plots(temperature_data, traces, others, baseline_temperatures, args)
+    elif args.plot_type == 'rq1':
+        fig, axs = rq1_plots(temperature_data, traces, others, baseline_temperatures, args)
+    else:
+        raise ValueError(f"Plot type {args.plot_type} not implemented!")
+    if args.x_range is not None:
+        if len(args.x_range) == 1:
+            x_range = (0, min(max([max(t.timestamp) for t in temperature_data]+[t.timestamp for t in traces]), args.x_range[0]))
+        else:
+            x_range = (args.x_range[0], min(max([max(t.timestamp) for t in temperature_data]+[t.timestamp for t in traces]), args.x_range[1]))
+        for ax in axs:
+            ax.set_xlim(x_range)
     plt.tight_layout()
     if args.output is None:
         plt.show()
