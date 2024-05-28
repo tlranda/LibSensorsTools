@@ -3,6 +3,7 @@ import json
 import pathlib
 import re
 import warnings
+import pprint
 import pandas as pd, numpy as np
 import matplotlib
 import matplotlib.pyplot as plt
@@ -102,16 +103,19 @@ def parse(args=None, prs=None):
     return args
 
 class TimedLabel():
-    def __init__(self, timestamp, label):
+    def __init__(self, timestamp, label, directory=None):
         self.timestamp = timestamp
         self.label = label
+        self.directory = directory
 
     def __str__(self):
+        if self.directory is not None:
+            return f"{self.directory}: {self.label}"
         return self.label
 
 class VarianceData(TimedLabel):
-    def __init__(self, timestamps, label, data, low_variance=None, high_variance=None):
-        super().__init__(timestamps, label)
+    def __init__(self, timestamps, label, data, directory=None, low_variance=None, high_variance=None):
+        super().__init__(timestamps, label, directory)
         self.data = data
         self.low_variance = low_variance
         self.high_variance = high_variance
@@ -249,15 +253,15 @@ def get_temps_and_traces(args, paths, postprocess=True, baseline=None):
                     if len(traces) > 0 and args.min_trace_diff is not None and\
                        record['timestamp'] - traces[-1].timestamp < args.min_trace_diff:
                        continue
-                    traces.append(TimedLabel(record['timestamp'], relabel(f"{refile(i.name,args)} {record['event']} ({int(record['timestamp'])})", args.rename_labels)))
+                    traces.append(TimedLabel(record['timestamp'], relabel(f"{refile(i.name,args)} {record['event']} ({int(record['timestamp'])})", args.rename_labels), directory=i.parents[0]))
             # Post all tracked data
             for (k,v) in jtemps.items():
                 # Sometimes the tool gets shut off, have to clip times to number of entries observed
                 observed_times = jtimes[:len(v)]
-                temps.append(VarianceData(observed_times, relabel(f"{refile(i.name,args)} {k.replace('_','-')}", args.rename_labels), v))
+                temps.append(VarianceData(observed_times, relabel(f"{refile(i.name,args)} {k.replace('_','-')}", args.rename_labels), v, directory=i.parents[0]))
             for (k,v) in non_temps.items():
                 observed_times = jtimes[:len(v)]
-                others.append(VarianceData(observed_times, relabel(f"{refile(i.name,args)} {k.replace('_','-')}", args.rename_labels),v))
+                others.append(VarianceData(observed_times, relabel(f"{refile(i.name,args)} {k.replace('_','-')}", args.rename_labels), v, directory=i.parents[0]))
             print(f"Loaded {sum([len(t.data) for t in temps[prev_temp_len:]])} temperature records ({len(jtemps.keys())} fields)")
             print(f"Loaded {len(traces[prev_trace_len:])} trace records")
         elif i.suffix == '.csv':
@@ -272,7 +276,7 @@ def get_temps_and_traces(args, paths, postprocess=True, baseline=None):
                 # This is probably semantically incorrect -- issue warning
                 warnings.warn("Timestamps may be overly long due to miscalibration, if you get a plotting error for mismatched x-y lengths, fix it here", UserWarning)
                 observed_times = data.iloc[:len(data[col]),'timestamp']
-                temps.append(VarianceData(observed_times, relabel(f"{refile(i.name,args)} {col.replace('_','-')}", args.rename_labels), data[col]))
+                temps.append(VarianceData(observed_times, relabel(f"{refile(i.name,args)} {col.replace('_','-')}", args.rename_labels), data[col], directory=i.parents[0]))
             print(f"Loaded {sum([len(t.data) for t in temps[prev_temp_len:]])} temperature records ({len(temp_cols)} fields)")
         else:
             raise ValueError("Input files must be .json or .csv")
@@ -427,15 +431,14 @@ def temperature_plots(temperature_data, traces, others, baseline_temperatures, a
                       loc='center left', bbox_to_anchor=(1.0, 0.5))
         if idx == 0:
             ax.set_title(args.title)
-    return fig, axs
+    return fig, axs, None
 
-def get_delta_points(temps, time, start, end, ax):
+def get_delta_points(temps, time, start, end):
     submer_temps = np.asarray(temps[start:end])
     submer_times = np.asarray(time[start:end])
     from scipy.signal import savgol_filter
     # Huge window with LINEAR smoothing to get rid of noise as much as possible
-    smoothed_temps = savgol_filter(submer_temps, 30, 1, mode='nearest')
-    ax.plot(submer_times, smoothed_temps,label='smooth')
+    smoothed_temps = savgol_filter(submer_temps, 20, 1, mode='nearest')
     # Get derivative to determine when slope changes directions (inflection points mark start/stop of cooling period
     dy = np.gradient(smoothed_temps)
     tentative_inflection_points = np.where(np.diff(np.sign(dy)))[0]
@@ -467,12 +470,17 @@ def get_delta_points(temps, time, start, end, ax):
         if submer_temps[inflection_points[-1]] > submer_temps[tip]:
             # Find valley (LAST lowest value)
             func = np.min
+            idx = 0
             inflection_points.append(tip)
         else:
             # Find peak (LAST highest value)
             func = np.max
+            idx = -1
             target = func(submer_temps[inflection_points[-1]:ending])
-            inflection_points.append(np.argwhere(submer_temps[inflection_points[-1]:ending] == target)[0][-1]+inflection_points[-1])
+            local_found = np.where(np.abs(submer_temps[inflection_points[-1]:ending]-target) < 1e-2)[0]
+            #print(submer_times[inflection_points[-1]],'-',submer_times[min(ending, len(submer_times)-1)], local_found)
+            found = local_found[idx]+inflection_points[-1]
+            inflection_points.append(found)
     return inflection_points
 
 def rq1_plots(temperature_data, traces, others, baseline_temperatures, args):
@@ -496,14 +504,96 @@ def rq1_plots(temperature_data, traces, others, baseline_temperatures, args):
     application_activity_idx = (initial_wait_idx[1], np.where(submer_times > wrapped_command_end)[0][0])
     # Period 3: Cooldown activity
     cooldown_idx = (application_activity_idx[1], len(submer_times))
+    periods = {'initial-wait': initial_wait_idx,
+               'application': application_activity_idx,
+               'cooldown': cooldown_idx,}
     # For each period, identify delta-extents
     # Periods 1-2 should be rising, period 3 falling up until some point, then rising
-    #start, end = initial_wait_idx
-    #start, end = application_activity_idx
-    start, end = cooldown_idx
-    identified_delta_points = get_delta_points(temperature_data[submer_idx].data, submer_times, start, end, axs[0])
-    axs[0].plot(submer_times[start:end], temperature_data[submer_idx].data[start:end], label='real')
-    axs[0].scatter(submer_times[start:end][identified_delta_points], np.asarray(temperature_data[submer_idx].data[start:end])[identified_delta_points], color='red',label='inf')
+    temps = np.asarray(temperature_data[submer_idx].data)
+    axs[0].plot(submer_times, temps)
+    auxs = []
+    for (pname, (pstart, pend)) in periods.items():
+        delta_points = get_delta_points(temps, submer_times, pstart, pend)
+        sub_temps = temps[pstart:pend]
+        dmax = sub_temps[delta_points].max()
+        dmin = sub_temps[delta_points].min()
+        heat_direction = np.sign(sub_temps[-1]-sub_temps[0])
+        duration = submer_times[min(pend, len(submer_times)-1)]-submer_times[pstart]
+        period = {'name': pname,
+                  'analysis': {
+                    'duration': duration,
+                    'total_heat_delta': (dmax-dmin) * heat_direction,
+                    's/C': duration / (dmax-dmin) * heat_direction,
+                    'deltas': np.diff(sub_temps[delta_points]),
+                  }}
+        auxs.append(period)
+        pprint.pprint(period)
+        axs[0].scatter(submer_times[pstart:pend][delta_points], temps[pstart:pend][delta_points])
+    if True:
+        plt.tight_layout()
+        plt.show()
+    plt.close(fig)
+    return None, None, auxs
+
+def rq1_postprocess(auxdict, args):
+    # Map keys to class groupings
+    tag_map = {'GPU': ['Stream','EMOGI','DGEMM','MD5_Bruteforcer','MD5_Cracker','Heterogeneous'],
+               'CPU': ['NPB_EP','NPB_DT','NPB_IS','HPCC','Heterogeneous'],
+               'Memory': ['Stream','EMOGI','NPB_DT','NPB_IS'],
+               'Compute': ['DGEMM','NPB_EP','HPCC','Heterogeneous'],
+               'Crypto': ['MD5_Bruteforcer','MD5_Cracker'],}
+    tag_groupings = dict((k,dict()) for k in tag_map.keys())
+    for tag_key, tag_lookups in tag_map.items():
+        np_tags = np.asarray(tag_lookups)
+        for dname, period_info in auxdict.items():
+            strdname = str(dname)
+            lookups = [tag in strdname for tag in tag_lookups]
+            if any(lookups):
+                #print(f"Identify {strdname} as {tag_key} data based on {np_tags[lookups][0]}")
+                tag_groupings[tag_key][np_tags[lookups][0]] = period_info
+    # Use grouped data to make the plot
+    fig, axs = plt.subplots(1, 1, figsize=(12,6))
+    x_ind = 0
+    min_height, max_height = np.inf, -np.inf
+    vlines = []
+    centered = []
+    for (metatag, scatters) in tag_groupings.items():
+        if x_ind > 0:
+            vlines.append(axs.vlines(x_ind-1, 0, 1, color='k'))
+        n_entries = len(scatters.keys())
+        if n_entries == 0:
+            continue
+        y_vals = []
+        labels = []
+        for (key, value) in scatters.items():
+            l_ext = [f"{key}: {v['analysis']['s/C']}" for v in value if 'application' in v['name']]
+            print(l_ext)
+            l_ext = [_.split(':')[0] for _ in l_ext]
+            y_ext = [v['analysis']['s/C'] for v in value if 'application' in v['name']]
+            max_height = max(max_height, max(y_ext))
+            min_height = min(min_height, min(y_ext))
+            y_vals.extend(y_ext)
+            labels.extend(l_ext)
+        x_vals = range(x_ind,x_ind+len(y_vals))
+        centered.append(x_ind+(len(y_vals)/2))
+        x_ind += len(y_vals)+1
+        axs.scatter(x_vals,y_vals,label=labels)
+    # Fix vline heights after the fact
+    for vline in vlines:
+        old_segments = vline.get_segments()
+        old_segments[0][0][-1] = min_height
+        old_segments[0][-1][-1] = max_height
+        vline.set_segments(old_segments)
+    axs.set_ylim([0.95*min_height,1.05*max_height])
+    axs.set_ylabel('Seconds to Add One Degree Celsius')
+    axs.set_xticks(centered)
+    axs.set_xticklabels(tag_groupings.keys())
+    hmap = {Line2D: HandlerLine2D(),
+            Patch: HandlerPatch(),
+            LineCollection: CustomLineCollectionHandler()}
+    axs.legend(handler_map=hmap,
+              loc='center left', bbox_to_anchor=(1.0, 0.5))
+    axs = [axs]
     return fig, axs
 
 def main(args=None):
@@ -514,12 +604,25 @@ def main(args=None):
         baseline_temperatures, _, _ = get_temps_and_traces(args, args.baselines, postprocess=False)
     temperature_data, traces, others = get_temps_and_traces(args, args.inputs, postprocess=True, baseline=baseline_temperatures)
     if args.plot_type == 'temperature':
-        fig, axs = temperature_plots(temperature_data, traces, others, baseline_temperatures, args)
+        fig, axs, _ = temperature_plots(temperature_data, traces, others, baseline_temperatures, args)
     elif args.plot_type == 'rq1':
-        fig, axs = rq1_plots(temperature_data, traces, others, baseline_temperatures, args)
+        if len(temperature_data) == 1 or all([t.directory is None for t in temperature_data]):
+            fig, axs, _ = rq1_plots(temperature_data, traces, others, baseline_temperatures, args)
+        else:
+            dirs = set([t.directory for t in temperature_data])
+            auxdict = dict()
+            for d in dirs:
+                print(f"For datasets in {d}")
+                tempdata = [t for t in temperature_data if t.directory == d]
+                tracedata = [t for t in traces if t.directory == d]
+                otherdata = [t for t in others if t.directory == d]
+                _, _, auxinfo = rq1_plots(tempdata, tracedata, otherdata, baseline_temperatures, args)
+                auxdict[d] = auxinfo
+            # Perform post-processing on auxdict
+            fig, axs = rq1_postprocess(auxdict, args)
     else:
         raise ValueError(f"Plot type {args.plot_type} not implemented!")
-    if args.x_range is not None:
+    if fig is not None and args.x_range is not None:
         if len(args.x_range) == 1:
             x_range = (0, min(max([max(t.timestamp) for t in temperature_data]+[t.timestamp for t in traces]), args.x_range[0]))
         else:
@@ -527,10 +630,11 @@ def main(args=None):
         for ax in axs:
             ax.set_xlim(x_range)
     plt.tight_layout()
-    if args.output is None:
-        plt.show()
-    else:
-        fig.savefig(args.output, format=args.format, dpi=args.dpi)
+    if fig is not None:
+        if args.output is None:
+            plt.show()
+        else:
+            fig.savefig(args.output, format=args.format, dpi=args.dpi)
 
 if __name__ == '__main__':
     main()
