@@ -429,6 +429,52 @@ def temperature_plots(temperature_data, traces, others, baseline_temperatures, a
             ax.set_title(args.title)
     return fig, axs
 
+def get_delta_points(temps, time, start, end, ax):
+    submer_temps = np.asarray(temps[start:end])
+    submer_times = np.asarray(time[start:end])
+    from scipy.signal import savgol_filter
+    # Huge window with LINEAR smoothing to get rid of noise as much as possible
+    smoothed_temps = savgol_filter(submer_temps, 30, 1, mode='nearest')
+    ax.plot(submer_times, smoothed_temps,label='smooth')
+    # Get derivative to determine when slope changes directions (inflection points mark start/stop of cooling period
+    dy = np.gradient(smoothed_temps)
+    tentative_inflection_points = np.where(np.diff(np.sign(dy)))[0]
+    # Two problems remain with these inflection points:
+    # 1) There are duplicates at some points where smoothing still felt a jitter
+    # 2) They don't always correspond to the peak/valley
+    # Address #1: Delete inflection points with small deltas to their neighbor
+    accepted_inflection_points = [0]
+    #print(f"Add point {accepted_inflection_points[0]} ({submer_temps[accepted_inflection_points[0]]} C @ {submer_times[accepted_inflection_points[0]]} s) <<Initial point>>")
+    for tidx, tip in enumerate(tentative_inflection_points):
+        if np.abs(smoothed_temps[tip]-smoothed_temps[accepted_inflection_points[-1]]) > 0.4:
+            #print(f"Add point {tip} ({submer_temps[tip]} C @ {submer_times[tip]} s) with delta {np.abs(smoothed_temps[tip]-smoothed_temps[accepted_inflection_points[-1]])}")
+            accepted_inflection_points.append(tip)
+    # Tend to over-accept climbing points
+    aip = [accepted_inflection_points[0]]
+    for tip, ntip in zip(accepted_inflection_points[1:], accepted_inflection_points[2:]):
+        if smoothed_temps[aip[-1]] < smoothed_temps[tip] and smoothed_temps[tip] < smoothed_temps[ntip]:
+            continue
+        aip.append(tip)
+    accepted_inflection_points = aip+[accepted_inflection_points[-1]]
+    # Address #2: Push inflection points to actual peak/valley
+    inflection_points = [accepted_inflection_points[0]]
+    for tidx, tip in enumerate(accepted_inflection_points[1:]):
+        try:
+            # Have to go +2 instead of +1 in case the next point (we haven't fixed it yet) is too early a cutoff
+            ending = accepted_inflection_points[tidx+2]
+        except IndexError:
+            ending = len(submer_temps)
+        if submer_temps[inflection_points[-1]] > submer_temps[tip]:
+            # Find valley (LAST lowest value)
+            func = np.min
+            inflection_points.append(tip)
+        else:
+            # Find peak (LAST highest value)
+            func = np.max
+            target = func(submer_temps[inflection_points[-1]:ending])
+            inflection_points.append(np.argwhere(submer_temps[inflection_points[-1]:ending] == target)[0][-1]+inflection_points[-1])
+    return inflection_points
+
 def rq1_plots(temperature_data, traces, others, baseline_temperatures, args):
     n_plot_groups = 1
     fig, axs = plt.subplots(n_plot_groups, 1, figsize=(12,6 * n_plot_groups))
@@ -448,40 +494,16 @@ def rq1_plots(temperature_data, traces, others, baseline_temperatures, args):
     initial_wait_idx = (0, np.where(submer_times > initial_wait_timestamp)[0][0])
     # Period 2: Application activity
     application_activity_idx = (initial_wait_idx[1], np.where(submer_times > wrapped_command_end)[0][0])
-    # Peroid 3: Cooldown activity
+    # Period 3: Cooldown activity
     cooldown_idx = (application_activity_idx[1], len(submer_times))
     # For each period, identify delta-extents
     # Periods 1-2 should be rising, period 3 falling up until some point, then rising
-    start, end = application_activity_idx
-    submer_temps = np.asarray(temperature_data[submer_idx].data[start:end])
-    temp_diffs = np.diff(submer_temps)
-    changing_idx = [idx for idx, val in enumerate(temp_diffs) if val != 0]
-    subset_tds = temp_diffs[changing_idx]
-    metachange_idx = []
-    initial_dir = np.sign(subset_tds[0])
-    jiggle_duration = 10
-    jiggle_tolerance = 3
-    skip = 0
-    for idx in range(len(changing_idx)):
-        if skip > 0:
-            skip -= 1
-            continue
-        current_dir = np.sign(temp_diffs[idx])
-        if current_dir == initial_dir:
-            continue
-        else:
-            # Look forward to see if it continues or just jiggles
-            jiggle_sum = np.sign(subset_tds[idx:min(len(subset_tds),idx+jiggle_duration)]).sum()
-            if jiggle_sum < jiggle_tolerance:
-                skip = jiggle_duration
-            else:
-                # Mark change in direction HERE
-                print(f"Changing direction at {idx} ({submer_times[changing_idx[idx]]}s) as {jiggle_sum} >= {jiggle_tolerance}")
-                initial_dir = np.sign(subset_tds[idx])
-                metachange_idx.append(idx)
-    changes = np.asarray(changing_idx)[metachange_idx]
-    import pdb
-    pdb.set_trace()
+    #start, end = initial_wait_idx
+    #start, end = application_activity_idx
+    start, end = cooldown_idx
+    identified_delta_points = get_delta_points(temperature_data[submer_idx].data, submer_times, start, end, axs[0])
+    axs[0].plot(submer_times[start:end], temperature_data[submer_idx].data[start:end], label='real')
+    axs[0].scatter(submer_times[start:end][identified_delta_points], np.asarray(temperature_data[submer_idx].data[start:end])[identified_delta_points], color='red',label='inf')
     return fig, axs
 
 def main(args=None):
