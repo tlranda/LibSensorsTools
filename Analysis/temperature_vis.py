@@ -39,7 +39,7 @@ def build():
     filters.add_argument("--max-time", default=None, type=float,
                      help="Do not plot temperature data after given timestamp (default: %(default)s)")
     plotting = prs.add_argument_group("Plotting Controls")
-    plotting.add_argument("--plot-type", choices=['temperature','rq1','rq2','rq3'], default='temperature',
+    plotting.add_argument("--plot-type", choices=['temperature','thermal_ranges','workload_classification','inactive_temperature_deltas'], default='temperature',
                      help="Plotting logic to utilize (default: %(default)s)")
     plotting.add_argument("--only-regex", default=None, nargs="*",
                      help="Only plot temperatures that match these regexes (default: .*)")
@@ -61,6 +61,8 @@ def build():
                      help="Omit legend (default: %(default)s)")
     plotting.add_argument("--x-range", nargs="*", type=float, default=None,
                      help="Set manual x-axis range (default: complete axis, if only one value is given, it is assumed to be rightmost extent)")
+    plotting.add_argument("--auxdict-plots", action="store_true",
+                     help="Show plots identifying heat deltas for auxdict (default: %(default)s)")
     return prs
 
 def parse(args=None, prs=None):
@@ -153,9 +155,13 @@ def mean_var_edit(temps, latekey=False):
     for temp in temps:
         fname, tool_id = temp.label.split(' ',1)
         tool, identifier, other = tool_id.split('-',2)
+        directory = temp.directory
+        if directory is not None:
+            # Fix key bug on pathlib.*Path
+            directory = str(directory)
         if latekey:
             tool += f"-{other}"
-        key = (fname, tool)
+        key = (fname, tool, directory)
         if key in new_temps.keys():
             new_temps[key].append(temp)
         else:
@@ -177,7 +183,7 @@ def mean_var_edit(temps, latekey=False):
         meandata = data.mean(axis=0)
         low_variance = data.min(axis=0)
         high_variance = data.max(axis=0)
-        new_temps[key] = VarianceData(timestamps, label=" ".join(key), data=meandata,
+        new_temps[key] = VarianceData(timestamps, label=" ".join(key), data=meandata, directory=key[2],
                                       low_variance=low_variance, high_variance=high_variance)
     return list(new_temps.values())
 
@@ -288,6 +294,75 @@ def get_temps_and_traces(args, paths, postprocess=True, baseline=None):
             temps = mean_var_edit(temps)
             others = mean_var_edit(others, latekey=True)
     return temps, traces, others
+
+def thermal_ranges_compute(temperature_data, traces, others, baseline_temperatures, args):
+    # Baseline min/mean/max experienced temperature per component during initial idle baseline
+    # Greatest temp ABOVE per-app baseline mean, rate of temperature increase
+
+    # Have to group all data by traces to ensure proper segmentation
+    hwdict = dict()
+    dirs = set([t.directory for t in temperature_data])
+    for d in dirs:
+        d = str(d)
+        # Subset of data
+        temps = [t for t in temperature_data if str(t.directory) == d]
+        trace = [t for t in traces if str(t.directory) == d]
+        other = [t for t in others if str(t.directory) == d]
+        # Accumulation for analysis
+        for t in temps:
+            label = t.label
+            if t.directory is not None and args.mean_var:
+                label = label.rsplit(' ',1)[0]
+            # Segmentation must be done per application
+            timestamps = np.asarray(t.timestamp)
+            time_idx = [np.where(timestamps > [_.timestamp for _ in trace if 'initial-wait-end' in str(_)][0])[0][0],
+                        np.where(timestamps > [_.timestamp for _ in trace if 'wrapped-command-end' in str(_)][0])[0][0]]
+            tdata = np.asarray(t.data)
+            init_temps = tdata[0:time_idx[0]]
+            # Min/max/mean accumulation, but delta measured over mean baseline
+            if label in hwdict.keys():
+                hwdict[label]['init_data'].extend(init_temps)
+            else:
+                hwdict[label] = {'init_data': [_ for _ in init_temps]}
+            baseline = init_temps.mean()
+            if args.mean_var and t.high_variance is not None:
+                tdata = np.asarray(t.high_variance)
+            # Application slope requires min/max point and timespan
+            # Application max based on DELTA OVER BASELINE
+            app_temps = tdata[time_idx[0]:time_idx[1]]
+            tmax = np.argmax(app_temps)
+            tdel = app_temps[tmax] - baseline
+            tdur = t.timestamp[time_idx[0]:time_idx[1]][tmax]-t.timestamp[time_idx[0]]
+            tslope = tdur / tdel # seconds / degree Celsius
+            if 'temp_slope' in hwdict[label].keys():
+                if hwdict[label]['temp_slope'] > tslope: # Lower is faster
+                    hwdict[label]['temp_slope'] = tslope
+                    hwdict[label]['slope_dur'] = tdur
+                    hwdict[label]['app_slope'] = t.directory
+                if hwdict[label]['temp_max_over_baseline'] < tdel:
+                    hwdict[label]['temp_max_over_baseline'] = tdel
+                    hwdict[label]['temp_baseline'] = baseline
+                    hwdict[label]['app_max_over_baseline'] = t.directory
+                if hwdict[label]['temp_max'] < app_temps[tmax]:
+                    hwdict[label]['temp_max'] = app_temps[tmax]
+                    hwdict[label]['app_max'] = t.directory
+            else:
+                hwdict[label].update({'temp_slope': tslope,
+                                   'slope_dur': tdur,
+                                   'app_slope': t.directory,
+                                   'temp_max_over_baseline': tdel,
+                                   'temp_baseline': baseline,
+                                   'app_max_over_baseline': t.directory,
+                                   'temp_max': app_temps[tmax],
+                                   'app_max': t.directory})
+    # Baseline min/mean/max
+    for key, subdict in hwdict.items():
+        print(key)
+        init_d = np.asarray(subdict['init_data'])
+        print("\tInitialization Phase:")
+        print("\t\t"+"\n\t\t".join([f"{fname}: {func(init_d):.2f}" for fname,func in zip(['Min','Mean','Max'],[np.min, np.mean, np.max])]))
+        print("\tApplication Phase:")
+        print("\t\t"+"\n\t\t".join([f"{subkey}: {subval}" if type(subval) in [str,pathlib.PosixPath] else f"{subkey}: {subval:.2f}" for subkey, subval in subdict.items() if subkey != 'init_data']))
 
 def temperature_plots(temperature_data, traces, others, baseline_temperatures, args):
     # Set number of plot groups based on actual loaded data matching regexes rather than user-faith assumption
@@ -438,7 +513,7 @@ def get_delta_points(temps, time, start, end):
     submer_times = np.asarray(time[start:end])
     from scipy.signal import savgol_filter
     # Huge window with LINEAR smoothing to get rid of noise as much as possible
-    smoothed_temps = savgol_filter(submer_temps, 20, 1, mode='nearest')
+    smoothed_temps = savgol_filter(submer_temps, 21, 1, mode='nearest')
     # Get derivative to determine when slope changes directions (inflection points mark start/stop of cooling period
     dy = np.gradient(smoothed_temps)
     tentative_inflection_points = np.where(np.diff(np.sign(dy)))[0]
@@ -483,7 +558,7 @@ def get_delta_points(temps, time, start, end):
             inflection_points.append(found)
     return inflection_points
 
-def rq1_plots(temperature_data, traces, others, baseline_temperatures, args):
+def heat_delta_detection(temperature_data, traces, others, baseline_temperatures, args):
     n_plot_groups = 1
     fig, axs = plt.subplots(n_plot_groups, 1, figsize=(12,6 * n_plot_groups))
     if n_plot_groups == 1:
@@ -525,23 +600,25 @@ def rq1_plots(temperature_data, traces, others, baseline_temperatures, args):
                     'total_heat_delta': (dmax-dmin) * heat_direction,
                     's/C': duration / (dmax-dmin) * heat_direction,
                     'deltas': np.diff(sub_temps[delta_points]),
+                    'init_delta': sub_temps[delta_points[:-1]],
                   }}
         auxs.append(period)
         pprint.pprint(period)
         axs[0].scatter(submer_times[pstart:pend][delta_points], temps[pstart:pend][delta_points])
-    if True:
+    if args.auxdict_plots:
         plt.tight_layout()
         plt.show()
     plt.close(fig)
     return None, None, auxs
 
-def rq1_postprocess(auxdict, args):
+def workload_classification_postprocess(auxdict, args):
     # Map keys to class groupings
-    tag_map = {'GPU': ['Stream','EMOGI','DGEMM','MD5_Bruteforcer','MD5_Cracker','Heterogeneous'],
-               'CPU': ['NPB_EP','NPB_DT','NPB_IS','HPCC','Heterogeneous'],
-               'Memory': ['Stream','EMOGI','NPB_DT','NPB_IS'],
-               'Compute': ['DGEMM','NPB_EP','HPCC','Heterogeneous'],
-               'Crypto': ['MD5_Bruteforcer','MD5_Cracker'],}
+    tag_map = {'GPU-centric': ['Stream','EMOGI','DGEMM','MD5_Bruteforcer','MD5_Cracker','Heterogeneous'],
+               'CPU-centric': ['NPB_EP','NPB_DT','NPB_IS','HPCC','Heterogeneous'],
+               'Memory-bound': ['Stream','EMOGI','NPB_DT','NPB_IS'],
+               'Compute-bound': ['DGEMM','NPB_EP','HPCC','Heterogeneous'],
+               #'Crypto': ['MD5_Bruteforcer','MD5_Cracker'],
+               }
     tag_groupings = dict((k,dict()) for k in tag_map.keys())
     for tag_key, tag_lookups in tag_map.items():
         np_tags = np.asarray(tag_lookups)
@@ -585,9 +662,62 @@ def rq1_postprocess(auxdict, args):
         old_segments[0][-1][-1] = max_height
         vline.set_segments(old_segments)
     axs.set_ylim([0.95*min_height,1.05*max_height])
-    axs.set_ylabel('Seconds to Add One Degree Celsius')
+    axs.set_ylabel('Seconds to Raise Coolant Temperature by One Degree Celsius')
     axs.set_xticks(centered)
     axs.set_xticklabels(tag_groupings.keys())
+    hmap = {Line2D: HandlerLine2D(),
+            Patch: HandlerPatch(),
+            LineCollection: CustomLineCollectionHandler()}
+    axs.legend(handler_map=hmap,
+               loc='center left', bbox_to_anchor=(1.0, 0.5))
+    axs = [axs]
+    return fig, axs
+
+def make_auxinfo_dict(temperature_data, traces, others, baseline_temperatures, args):
+    dirs = set([t.directory for t in temperature_data])
+    auxdict = dict()
+    for d in dirs:
+        print(f"For datasets in {d}")
+        tempdata = [t for t in temperature_data if t.directory == d]
+        tracedata = [t for t in traces if t.directory == d]
+        otherdata = [t for t in others if t.directory == d]
+        _, _, auxinfo = heat_delta_detection(tempdata, tracedata, otherdata, baseline_temperatures, args)
+        auxdict[d] = auxinfo
+    return auxdict
+
+def inactive_temperature_deltas_postprocess(auxdict, args):
+    fig, axs = plt.subplots(1, 1, figsize=(12,6))
+    # Combine non-active times
+    init_temps = []
+    temp_delta = []
+    labels = []
+    import pdb
+    for (app, pdictlist) in auxdict.items():
+        for pdict in pdictlist:
+            if pdict['name'] != 'application':
+                if len(pdict['analysis']['init_delta']) != len(pdict['analysis']['deltas']):
+                    pdb.set_trace()
+                # Only cooling phases
+                for init, delta in zip(pdict['analysis']['init_delta'], pdict['analysis']['deltas']):
+                    if delta < 0:
+                        init_temps.append(init)
+                        temp_delta.append(delta)
+                        labels.append(pdict['name'])
+    temps = np.asarray(init_temps)
+    delta = np.asarray(temp_delta)
+    labels = np.asarray(labels)
+    srt = np.argsort(temps)
+    temps = temps[srt]
+    delta = delta[srt]
+    labels = labels[srt]
+    labelset = set(labels)
+    print(len(labelset))
+    for label in labelset:
+        match_idx = np.where(labels == label)[0]
+        print(label, len(match_idx))
+        axs.scatter(temps[match_idx],delta[match_idx],label=label)
+    axs.set_xlabel("Initial Temperature (C)")
+    axs.set_ylabel("Measured Delta (C)")
     hmap = {Line2D: HandlerLine2D(),
             Patch: HandlerPatch(),
             LineCollection: CustomLineCollectionHandler()}
@@ -603,23 +733,21 @@ def main(args=None):
     else:
         baseline_temperatures, _, _ = get_temps_and_traces(args, args.baselines, postprocess=False)
     temperature_data, traces, others = get_temps_and_traces(args, args.inputs, postprocess=True, baseline=baseline_temperatures)
+    fig, axs = None, None
     if args.plot_type == 'temperature':
         fig, axs, _ = temperature_plots(temperature_data, traces, others, baseline_temperatures, args)
-    elif args.plot_type == 'rq1':
+    elif args.plot_type == 'thermal_ranges':
+        thermal_ranges_compute(temperature_data, traces, others, baseline_temperatures, args)
+    elif args.plot_type == 'workload_classification':
         if len(temperature_data) == 1 or all([t.directory is None for t in temperature_data]):
-            fig, axs, _ = rq1_plots(temperature_data, traces, others, baseline_temperatures, args)
+            fig, axs, _ = heat_delta_detection(temperature_data, traces, others, baseline_temperatures, args)
         else:
-            dirs = set([t.directory for t in temperature_data])
-            auxdict = dict()
-            for d in dirs:
-                print(f"For datasets in {d}")
-                tempdata = [t for t in temperature_data if t.directory == d]
-                tracedata = [t for t in traces if t.directory == d]
-                otherdata = [t for t in others if t.directory == d]
-                _, _, auxinfo = rq1_plots(tempdata, tracedata, otherdata, baseline_temperatures, args)
-                auxdict[d] = auxinfo
+            auxdict = make_auxinfo_dict(temperature_data, traces, others, baseline_temperatures, args)
             # Perform post-processing on auxdict
-            fig, axs = rq1_postprocess(auxdict, args)
+            fig, axs = workload_classification_postprocess(auxdict, args)
+    elif args.plot_type == 'inactive_temperature_deltas':
+            auxdict = make_auxinfo_dict(temperature_data, traces, others, baseline_temperatures, args)
+            fig, axs = inactive_temperature_deltas_postprocess(auxdict, args)
     else:
         raise ValueError(f"Plot type {args.plot_type} not implemented!")
     if fig is not None and args.x_range is not None:
