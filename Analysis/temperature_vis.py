@@ -591,6 +591,8 @@ def heat_delta_detection(temperature_data, traces, others, baseline_temperatures
         delta_points = get_delta_points(temps, submer_times, pstart, pend)
         sub_temps = temps[pstart:pend]
         dmax = sub_temps[delta_points].max()
+        scMax = sub_temps.max()
+        scMin = sub_temps.min()
         dmin = sub_temps[delta_points].min()
         heat_direction = np.sign(sub_temps[-1]-sub_temps[0])
         duration = submer_times[min(pend, len(submer_times)-1)]-submer_times[pstart]
@@ -598,7 +600,7 @@ def heat_delta_detection(temperature_data, traces, others, baseline_temperatures
                   'analysis': {
                     'duration': duration,
                     'total_heat_delta': (dmax-dmin) * heat_direction,
-                    's/C': duration / (dmax-dmin) * heat_direction,
+                    's/C': duration / (scMax-scMin) * heat_direction,
                     'deltas': np.diff(sub_temps[delta_points]),
                     'init_delta': sub_temps[delta_points[:-1]],
                   }}
@@ -655,6 +657,8 @@ def workload_classification_postprocess(auxdict, args):
         centered.append(x_ind+(len(y_vals)/2))
         x_ind += len(y_vals)+1
         axs.scatter(x_vals,y_vals,label=labels)
+        for (x,y,label) in zip(x_vals, y_vals,labels):
+            axs.text(x,y,label if '_' not in label else label.split('_')[-1])
     # Fix vline heights after the fact
     for vline in vlines:
         old_segments = vline.get_segments()
@@ -665,11 +669,12 @@ def workload_classification_postprocess(auxdict, args):
     axs.set_ylabel('Seconds to Raise Coolant Temperature by One Degree Celsius')
     axs.set_xticks(centered)
     axs.set_xticklabels(tag_groupings.keys())
-    hmap = {Line2D: HandlerLine2D(),
-            Patch: HandlerPatch(),
-            LineCollection: CustomLineCollectionHandler()}
-    axs.legend(handler_map=hmap,
-               loc='center left', bbox_to_anchor=(1.0, 0.5))
+    if not args.no_legend:
+        hmap = {Line2D: HandlerLine2D(),
+                Patch: HandlerPatch(),
+                LineCollection: CustomLineCollectionHandler()}
+        axs.legend(handler_map=hmap,
+                   loc='center left', bbox_to_anchor=(1.0, 0.5))
     axs = [axs]
     return fig, axs
 
@@ -678,9 +683,9 @@ def make_auxinfo_dict(temperature_data, traces, others, baseline_temperatures, a
     auxdict = dict()
     for d in dirs:
         print(f"For datasets in {d}")
-        tempdata = [t for t in temperature_data if t.directory == d]
-        tracedata = [t for t in traces if t.directory == d]
-        otherdata = [t for t in others if t.directory == d]
+        tempdata = [t for t in temperature_data if str(t.directory) == str(d)]
+        tracedata = [t for t in traces if str(t.directory) == str(d)]
+        otherdata = [t for t in others if str(t.directory) == str(d)]
         _, _, auxinfo = heat_delta_detection(tempdata, tracedata, otherdata, baseline_temperatures, args)
         auxdict[d] = auxinfo
     return auxdict
@@ -691,12 +696,11 @@ def inactive_temperature_deltas_postprocess(auxdict, args):
     init_temps = []
     temp_delta = []
     labels = []
-    import pdb
     for (app, pdictlist) in auxdict.items():
         for pdict in pdictlist:
             if pdict['name'] != 'application':
                 if len(pdict['analysis']['init_delta']) != len(pdict['analysis']['deltas']):
-                    pdb.set_trace()
+                    raise ValueError("This should not happen but it's a bug if it does")
                 # Only cooling phases
                 for init, delta in zip(pdict['analysis']['init_delta'], pdict['analysis']['deltas']):
                     if delta < 0:
