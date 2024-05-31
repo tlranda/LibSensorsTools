@@ -508,54 +508,71 @@ def temperature_plots(temperature_data, traces, others, baseline_temperatures, a
             ax.set_title(args.title)
     return fig, axs, None
 
-def get_delta_points(temps, time, start, end):
+def get_delta_points(temps, time, start, end, others):
     submer_temps = np.asarray(temps[start:end])
     submer_times = np.asarray(time[start:end])
-    from scipy.signal import savgol_filter
-    # Huge window with LINEAR smoothing to get rid of noise as much as possible
-    smoothed_temps = savgol_filter(submer_temps, 21, 1, mode='nearest')
-    # Get derivative to determine when slope changes directions (inflection points mark start/stop of cooling period
-    dy = np.gradient(smoothed_temps)
-    tentative_inflection_points = np.where(np.diff(np.sign(dy)))[0]
-    # Two problems remain with these inflection points:
-    # 1) There are duplicates at some points where smoothing still felt a jitter
-    # 2) They don't always correspond to the peak/valley
-    # Address #1: Delete inflection points with small deltas to their neighbor
-    accepted_inflection_points = [0]
-    #print(f"Add point {accepted_inflection_points[0]} ({submer_temps[accepted_inflection_points[0]]} C @ {submer_times[accepted_inflection_points[0]]} s) <<Initial point>>")
-    for tidx, tip in enumerate(tentative_inflection_points):
-        if np.abs(smoothed_temps[tip]-smoothed_temps[accepted_inflection_points[-1]]) > 0.4:
-            #print(f"Add point {tip} ({submer_temps[tip]} C @ {submer_times[tip]} s) with delta {np.abs(smoothed_temps[tip]-smoothed_temps[accepted_inflection_points[-1]])}")
-            accepted_inflection_points.append(tip)
-    # Tend to over-accept climbing points
-    aip = [accepted_inflection_points[0]]
-    for tip, ntip in zip(accepted_inflection_points[1:], accepted_inflection_points[2:]):
-        if smoothed_temps[aip[-1]] < smoothed_temps[tip] and smoothed_temps[tip] < smoothed_temps[ntip]:
-            continue
-        aip.append(tip)
-    accepted_inflection_points = aip+[accepted_inflection_points[-1]]
-    # Address #2: Push inflection points to actual peak/valley
-    inflection_points = [accepted_inflection_points[0]]
-    for tidx, tip in enumerate(accepted_inflection_points[1:]):
-        try:
-            # Have to go +2 instead of +1 in case the next point (we haven't fixed it yet) is too early a cutoff
-            ending = accepted_inflection_points[tidx+2]
-        except IndexError:
-            ending = len(submer_temps)
-        if submer_temps[inflection_points[-1]] > submer_temps[tip]:
-            # Find valley (LAST lowest value)
-            func = np.min
-            idx = 0
-            inflection_points.append(tip)
-        else:
-            # Find peak (LAST highest value)
-            func = np.max
-            idx = -1
-            target = func(submer_temps[inflection_points[-1]:ending])
-            local_found = np.where(np.abs(submer_temps[inflection_points[-1]:ending]-target) < 1e-2)[0]
-            #print(submer_times[inflection_points[-1]],'-',submer_times[min(ending, len(submer_times)-1)], local_found)
-            found = local_found[idx]+inflection_points[-1]
-            inflection_points.append(found)
+    if others is not None:
+        rpm_times = np.asarray(others.timestamp)
+        ostart = np.where(rpm_times >= submer_times[0])[0][0]
+        oend = np.where(rpm_times >= submer_times[-1])[0][0] + 1 # Include final matching index
+        rpm_values = np.asarray(others.data[ostart:oend])
+        # Inflection points start/stop when pump starts or stops
+        inflection_points = []
+        is_running = rpm_values[0] > 0
+        for idx, rpm_value in enumerate(rpm_values):
+            if is_running and rpm_value == 0:
+                inflection_points.append(idx)
+                is_running = False
+            elif not is_running and rpm_value > 0:
+                inflection_points.append(idx)
+                is_running = True
+        return inflection_points
+    else:
+        from scipy.signal import savgol_filter
+        # Huge window with LINEAR smoothing to get rid of noise as much as possible
+        smoothed_temps = savgol_filter(submer_temps, 21, 1, mode='nearest')
+        # Get derivative to determine when slope changes directions (inflection points mark start/stop of cooling period
+        dy = np.gradient(smoothed_temps)
+        tentative_inflection_points = np.where(np.diff(np.sign(dy)))[0]
+        # Two problems remain with these inflection points:
+        # 1) There are duplicates at some points where smoothing still felt a jitter
+        # 2) They don't always correspond to the peak/valley
+        # Address #1: Delete inflection points with small deltas to their neighbor
+        accepted_inflection_points = [0]
+        #print(f"Add point {accepted_inflection_points[0]} ({submer_temps[accepted_inflection_points[0]]} C @ {submer_times[accepted_inflection_points[0]]} s) <<Initial point>>")
+        for tidx, tip in enumerate(tentative_inflection_points):
+            if np.abs(smoothed_temps[tip]-smoothed_temps[accepted_inflection_points[-1]]) > 0.4:
+                #print(f"Add point {tip} ({submer_temps[tip]} C @ {submer_times[tip]} s) with delta {np.abs(smoothed_temps[tip]-smoothed_temps[accepted_inflection_points[-1]])}")
+                accepted_inflection_points.append(tip)
+        # Tend to over-accept climbing points
+        aip = [accepted_inflection_points[0]]
+        for tip, ntip in zip(accepted_inflection_points[1:], accepted_inflection_points[2:]):
+            if smoothed_temps[aip[-1]] < smoothed_temps[tip] and smoothed_temps[tip] < smoothed_temps[ntip]:
+                continue
+            aip.append(tip)
+        accepted_inflection_points = aip+[accepted_inflection_points[-1]]
+        # Address #2: Push inflection points to actual peak/valley
+        inflection_points = [accepted_inflection_points[0]]
+        for tidx, tip in enumerate(accepted_inflection_points[1:]):
+            try:
+                # Have to go +2 instead of +1 in case the next point (we haven't fixed it yet) is too early a cutoff
+                ending = accepted_inflection_points[tidx+2]
+            except IndexError:
+                ending = len(submer_temps)
+            if submer_temps[inflection_points[-1]] > submer_temps[tip]:
+                # Find valley (LAST lowest value)
+                func = np.min
+                idx = 0
+                inflection_points.append(tip)
+            else:
+                # Find peak (LAST highest value)
+                func = np.max
+                idx = -1
+                target = func(submer_temps[inflection_points[-1]:ending])
+                local_found = np.where(np.abs(submer_temps[inflection_points[-1]:ending]-target) < 1e-2)[0]
+                #print(submer_times[inflection_points[-1]],'-',submer_times[min(ending, len(submer_times)-1)], local_found)
+                found = local_found[idx]+inflection_points[-1]
+                inflection_points.append(found)
     return inflection_points
 
 def heat_delta_detection(temperature_data, traces, others, baseline_temperatures, args):
@@ -585,10 +602,15 @@ def heat_delta_detection(temperature_data, traces, others, baseline_temperatures
     # For each period, identify delta-extents
     # Periods 1-2 should be rising, period 3 falling up until some point, then rising
     temps = np.asarray(temperature_data[submer_idx].data)
+    if others is not None and len(others) > 0:
+        other_idx = np.argmax([max(o.data) if 'rpm' in o.label else -np.inf for o in others])
+        other = others[other_idx]
+    else:
+        other = None
     axs[0].plot(submer_times, temps)
     auxs = []
     for (pname, (pstart, pend)) in periods.items():
-        delta_points = get_delta_points(temps, submer_times, pstart, pend)
+        delta_points = get_delta_points(temps, submer_times, pstart, pend, other)
         sub_temps = temps[pstart:pend]
         dmax = sub_temps[delta_points].max()
         scMax = sub_temps.max()
