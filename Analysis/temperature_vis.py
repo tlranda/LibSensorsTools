@@ -6,7 +6,18 @@ import warnings
 import pprint
 import pandas as pd, numpy as np
 import matplotlib
+font = {'size': 24,
+        'family': 'serif',}
+lines = {'linewidth': 2,
+         'markersize': 6,}
+matplotlib.rc('font', **font)
+matplotlib.rc('lines', **lines)
 import matplotlib.pyplot as plt
+rcparams = {'axes.labelsize': 16,
+            'legend.fontsize': 16,
+            'xtick.labelsize': 20,
+            'ytick.labelsize': 20,}
+plt.rcParams.update(rcparams)
 from matplotlib.legend_handler import HandlerBase, HandlerLine2D, HandlerPatch, HandlerLineCollection
 from matplotlib.lines import Line2D
 from matplotlib.collections import LineCollection
@@ -39,7 +50,7 @@ def build():
     filters.add_argument("--max-time", default=None, type=float,
                      help="Do not plot temperature data after given timestamp (default: %(default)s)")
     plotting = prs.add_argument_group("Plotting Controls")
-    plotting.add_argument("--plot-type", choices=['temperature','thermal_ranges','workload_classification','inactive_temperature_deltas'], default='temperature',
+    plotting.add_argument("--plot-type", choices=['temperature','thermal_ranges','workload_classification','inactive_temperature_deltas','active_temperature_deltas'], default='temperature',
                      help="Plotting logic to utilize (default: %(default)s)")
     plotting.add_argument("--only-regex", default=None, nargs="*",
                      help="Only plot temperatures that match these regexes (default: .*)")
@@ -57,6 +68,8 @@ def build():
                      help="Map a field label name to a new value (separated by colon OLD:NEW) (default: %(default)s)")
     plotting.add_argument("--rename-files", action="store_true",
                      help="Cleaner names for files (default: %(default)s)")
+    plotting.add_argument("--legend-position", choices=['outside','best','upper right','lower left'], default='upper right',
+                     help="Position of the legend if plotted (default: %(default)s)")
     plotting.add_argument("--no-legend", action="store_true",
                      help="Omit legend (default: %(default)s)")
     plotting.add_argument("--x-range", nargs="*", type=float, default=None,
@@ -130,6 +143,15 @@ class CustomLineCollectionHandler(HandlerLineCollection):
             legline[0].set_data([10.,10.,10.,], [-2.,3.5,9.,])
             return legline
         return None
+
+def set_size(width, fraction=1, subplots=(1,1)):
+    fig_width_pt = width * fraction
+    inches_per_pt = 1 / 72.27
+    golden_ratio = (5**.5 - 1) / 2
+    fig_width_in = fig_width_pt * inches_per_pt
+    fig_height_in = fig_width_in * golden_ratio * (subplots[0] / subplots[1])
+    print(f"Calculate {width} to represent inches: {fig_width_in} by {fig_height_in}")
+    return (fig_width_in, fig_height_in)
 
 def prune_temps(args, temps):
     new_temps = []
@@ -384,6 +406,8 @@ def temperature_plots(temperature_data, traces, others, baseline_temperatures, a
         n_plot_groups = 1
     if len(args.non_temperatures) > 0:
         n_plot_groups += 1
+    proposed_figsize = set_size(4, subplots=(1, n_plot_groups))
+    print(f"Default fig size: {12} by {6*n_plot_groups}")
     fig, axs = plt.subplots(n_plot_groups, 1, figsize=(12,6 * n_plot_groups))
     if n_plot_groups == 1:
         axs = [axs]
@@ -484,11 +508,16 @@ def temperature_plots(temperature_data, traces, others, baseline_temperatures, a
                     LineCollection: CustomLineCollectionHandler()}
             if not args.no_traces:
                 for trace in traces:
-                    vline = ax.vlines(trace.timestamp, 0, 1, transform=ax.get_xaxis_transform(), label=trace.label)
-                    #ax_legend_handles[idx].append(vline)
+                    if args.x_range is None or trace.timestamp < args.x_range[-1]:
+                        vline = ax.vlines(trace.timestamp, 0, 1, transform=ax.get_xaxis_transform(), label=trace.label, color='k')
+                        #ax_legend_handles[idx].append(vline)
             if not args.no_legend:
-                ax.legend(handler_map=hmap,
-                          loc='center left', bbox_to_anchor=(1.0, 0.5))
+                if args.legend_position == 'outside':
+                    ax.legend(handler_map=hmap,
+                              loc='center left', bbox_to_anchor=(1.0, 0.5))
+                else:
+                    ax.legend(handler_map=hmap,
+                              loc=args.legend_position)
             continue
         if not args.independent_y_scaling and (np.isfinite(min(ymin)) and np.isfinite(max(ymax))):
             ax.set_ylim(min(ymin)*0.95, max(ymax)*1.05)
@@ -496,14 +525,22 @@ def temperature_plots(temperature_data, traces, others, baseline_temperatures, a
             ax.set_ylim(ymin[idx]*0.95, ymax[idx]*1.05)
         if not args.no_traces:
             for trace in traces:
-                vline = ax.vlines(trace.timestamp, 0, 1, transform=ax.get_xaxis_transform(), label=trace.label)
-                ax_legend_handles[idx].append(vline)
+                if args.x_range is None or trace.timestamp < args.x_range[-1]:
+                    vline = ax.vlines(trace.timestamp, 0, 1, transform=ax.get_xaxis_transform(), label=trace.label, color='k')
+                    if idx in ax_legend_handles:
+                        ax_legend_handles[idx].append(vline)
+                    else:
+                        ax_legend_handles[idx] = [vline]
         hmap = {Line2D: HandlerLine2D(),
                 Patch: HandlerPatch(),
                 LineCollection: CustomLineCollectionHandler()}
         if not args.no_legend:
-            ax.legend(handler_map=hmap,
-                      loc='center left', bbox_to_anchor=(1.0, 0.5))
+            if args.legend_position == 'outside':
+                ax.legend(handler_map=hmap,
+                          loc='center left', bbox_to_anchor=(1.0, 0.5))
+            else:
+                ax.legend(handler_map=hmap,
+                          loc=args.legend_position)
         if idx == 0:
             ax.set_title(args.title)
     return fig, axs, None
@@ -607,16 +644,24 @@ def heat_delta_detection(temperature_data, traces, others, baseline_temperatures
         other = others[other_idx]
     else:
         other = None
-    axs[0].plot(submer_times, temps)
+    if args.auxdict_plots:
+        axs[0].plot(submer_times, temps)
     auxs = []
     for (pname, (pstart, pend)) in periods.items():
         delta_points = get_delta_points(temps, submer_times, pstart, pend, other)
-        sub_temps = temps[pstart:pend]
-        dmax = sub_temps[delta_points].max()
-        scMax = sub_temps.max()
-        scMin = sub_temps.min()
-        dmin = sub_temps[delta_points].min()
-        heat_direction = np.sign(sub_temps[-1]-sub_temps[0])
+        try:
+            sub_temps = temps[pstart:pend]
+            dmax = sub_temps[delta_points].max()
+            scMax = sub_temps.max()
+            scMin = sub_temps.min()
+            dmin = sub_temps[delta_points].min()
+            heat_direction = np.sign(sub_temps[-1]-sub_temps[0])
+        except:
+            import pdb
+            pdb.set_trace()
+            raise
+        if heat_direction == 0.0:
+            heat_direction = 1.0
         duration = submer_times[min(pend, len(submer_times)-1)]-submer_times[pstart]
         period = {'name': pname,
                   'analysis': {
@@ -626,9 +671,19 @@ def heat_delta_detection(temperature_data, traces, others, baseline_temperatures
                     'deltas': np.diff(sub_temps[delta_points]),
                     'init_delta': sub_temps[delta_points[:-1]],
                   }}
+        if args.plot_type == 'active_temperature_deltas':
+            period['analysis']['others'] = dict()
+            for o in others:
+                olabel = o.label.split(' ')[1]
+                if olabel in period['analysis']['others']:
+                    period['analysis']['others'][olabel][0].extend(np.asarray(o.data[pstart:pend])[delta_points])
+                    period['analysis']['others'][olabel][1].extend(np.asarray(o.timestamp[pstart:pend])[delta_points])
+                else:
+                    period['analysis']['others'][olabel] = (list(np.asarray(o.data[pstart:pend])[delta_points]), list(np.asarray(o.timestamp[pstart:pend])[delta_points]))
         auxs.append(period)
-        pprint.pprint(period)
-        axs[0].scatter(submer_times[pstart:pend][delta_points], temps[pstart:pend][delta_points])
+        #pprint.pprint(period)
+        if args.auxdict_plots:
+            axs[0].scatter(submer_times[pstart:pend][delta_points], temps[pstart:pend][delta_points])
     if args.auxdict_plots:
         plt.tight_layout()
         plt.show()
@@ -676,27 +731,33 @@ def workload_classification_postprocess(auxdict, args):
             y_vals.extend(y_ext)
             labels.extend(l_ext)
         x_vals = range(x_ind,x_ind+len(y_vals))
-        centered.append(x_ind+(len(y_vals)/2))
+        centered.append(x_ind+(len(y_vals)/2) - 0.5)
         x_ind += len(y_vals)+1
-        axs.scatter(x_vals,y_vals,label=labels)
+        #axs.scatter(x_vals,y_vals,label=labels)
+        axs.bar(x_vals,y_vals,label=labels)
+        y_min = min(y_vals)
         for (x,y,label) in zip(x_vals, y_vals,labels):
-            axs.text(x,y,label if '_' not in label else label.split('_')[-1])
+            axs.text(x+0.3,y_min,relabel(label if '_' not in label else label.split('_')[-1],args.rename_labels),rotation_mode='anchor',rotation=90,horizontalalignment='left',verticalalignment='bottom')
     # Fix vline heights after the fact
     for vline in vlines:
         old_segments = vline.get_segments()
-        old_segments[0][0][-1] = min_height
+        old_segments[0][0][-1] = min(min_height,0)
         old_segments[0][-1][-1] = max_height
         vline.set_segments(old_segments)
     axs.set_ylim([0.95*min_height,1.05*max_height])
-    axs.set_ylabel('Seconds to Raise Coolant Temperature by One Degree Celsius')
+    axs.set_ylabel('Seconds to Raise Coolant Temperature\nby One Degree Celsius')
     axs.set_xticks(centered)
     axs.set_xticklabels(tag_groupings.keys())
     if not args.no_legend:
         hmap = {Line2D: HandlerLine2D(),
                 Patch: HandlerPatch(),
                 LineCollection: CustomLineCollectionHandler()}
-        axs.legend(handler_map=hmap,
-                   loc='center left', bbox_to_anchor=(1.0, 0.5))
+        if args.legend_position == 'outside':
+            axs.legend(handler_map=hmap,
+                      loc='center left', bbox_to_anchor=(1.0, 0.5))
+        else:
+            axs.legend(handler_map=hmap,
+                      loc=args.legend_position)
     axs = [axs]
     return fig, axs
 
@@ -724,11 +785,25 @@ def inactive_temperature_deltas_postprocess(auxdict, args):
                 if len(pdict['analysis']['init_delta']) != len(pdict['analysis']['deltas']):
                     raise ValueError("This should not happen but it's a bug if it does")
                 # Only cooling phases
-                for init, delta in zip(pdict['analysis']['init_delta'], pdict['analysis']['deltas']):
-                    if delta < 0:
-                        init_temps.append(init)
-                        temp_delta.append(delta)
-                        labels.append(pdict['name'])
+                if args.plot_type == 'inactive_temperature_deltas':
+                    for init, delta in zip(pdict['analysis']['init_delta'], pdict['analysis']['deltas']):
+                        if delta < 0:
+                            init_temps.append(init)
+                            temp_delta.append(delta)
+                            labels.append(pdict['name'])
+                else:
+                    neg_deltas = list(np.where(np.asarray(pdict['analysis']['deltas']) < 0)[0])
+                    for other_key, other_data in pdict['analysis']['others'].items():
+                        if 'rpm' in other_key:
+                            continue
+                        try:
+                            init_temps.extend(np.asarray(other_data[0])[neg_deltas])
+                        except:
+                            import pdb
+                            pdb.set_trace()
+                            raise
+                        temp_delta.extend(neg_deltas)
+                        labels.extend([other_key]*len(neg_deltas))
     temps = np.asarray(init_temps)
     delta = np.asarray(temp_delta)
     labels = np.asarray(labels)
@@ -741,14 +816,21 @@ def inactive_temperature_deltas_postprocess(auxdict, args):
     for label in labelset:
         match_idx = np.where(labels == label)[0]
         print(label, len(match_idx))
-        axs.scatter(temps[match_idx],delta[match_idx],label=label)
-    axs.set_xlabel("Initial Temperature (C)")
+        axs.scatter(temps[match_idx],delta[match_idx],label=relabel(label,args.rename_labels))
+    if args.plot_type == 'inactive_temperature_deltas':
+        axs.set_xlabel("Initial Temperature (C)")
+    else:
+        axs.set_xlabel("Activity")
     axs.set_ylabel("Measured Delta (C)")
     hmap = {Line2D: HandlerLine2D(),
             Patch: HandlerPatch(),
             LineCollection: CustomLineCollectionHandler()}
-    axs.legend(handler_map=hmap,
-              loc='center left', bbox_to_anchor=(1.0, 0.5))
+    if args.legend_position == 'outside':
+        axs.legend(handler_map=hmap,
+                  loc='center left', bbox_to_anchor=(1.0, 0.5))
+    else:
+        axs.legend(handler_map=hmap,
+                  loc=args.legend_position)
     axs = [axs]
     return fig, axs
 
@@ -771,7 +853,7 @@ def main(args=None):
             auxdict = make_auxinfo_dict(temperature_data, traces, others, baseline_temperatures, args)
             # Perform post-processing on auxdict
             fig, axs = workload_classification_postprocess(auxdict, args)
-    elif args.plot_type == 'inactive_temperature_deltas':
+    elif args.plot_type == 'inactive_temperature_deltas' or args.plot_type == 'active_temperature_deltas':
             auxdict = make_auxinfo_dict(temperature_data, traces, others, baseline_temperatures, args)
             fig, axs = inactive_temperature_deltas_postprocess(auxdict, args)
     else:
