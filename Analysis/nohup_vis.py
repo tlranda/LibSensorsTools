@@ -6,6 +6,8 @@ import numpy as np
 import pandas as pd
 import matplotlib
 import matplotlib.pyplot as plt
+import seaborn as sns
+import warnings
 
 def build():
     prs = argparse.ArgumentParser()
@@ -62,10 +64,12 @@ def main(args=None):
     timedict = extract_times(args)
     longest_ntimes = max([len(v)//2 for v in timedict.values()])
     fig, ax = plt.subplots(1, 1, figsize=(12,6))
-    ax.set_ylabel("Speedup (Relative to $1^{st}$ Iteration)")
-    ax.set_xlabel("Iteration")
     maxx = 0
+    dataframe = pd.DataFrame({'idx': [], 'speedup': [], 'benchmark': []})
+    didx = 0
+    dlabels = []
     for (app, times) in timedict.items():
+        label = str(pathlib.Path(app).parents[0]).rsplit('/',1)[-1].split('2024')[0][:-1].replace("_"," ")
         if len(times) % 2 == 1:
             # Likely, a started application was interrupted
             times = times[:-1]
@@ -75,16 +79,32 @@ def main(args=None):
         stops  = times[1::2]
         periods = np.asarray([(sp-st).total_seconds() for st,sp in zip(starts,stops)])
         normalized = periods / periods[0]
+        # Some outliers exist
+        old_len = len(normalized)
+        normalized = normalized[np.abs(normalized) < 2]
+        if len(normalized) < old_len:
+            warnings.warn(f"{label} dropped {old_len-len(normalized)} entries as possible outliers. Consider re-rerunning experiment", UserWarning)
         if args.xlim is not None:
             normalized = normalized[:args.xlim]
-        ax.plot(np.asarray(range(len(normalized)))/len(normalized), normalized, label=str(pathlib.Path(app).parents[0]).rsplit('/',1)[-1].split('2024')[0][:-1].replace("_"," "))
+        dataframe = pd.concat((dataframe,
+                        pd.DataFrame({'idx': np.asarray(range(len(normalized))) / len(normalized),
+                                      'speedup': normalized,
+                                      'benchmark': [didx] * len(normalized)})))
+        didx += 1
+        dlabels.append(label)
+        #ax.plot(np.asarray(range(len(normalized)))/len(normalized), normalized, label=label)
         maxx = max(maxx, len(normalized))
-    ax.hlines(1.0,0,maxx,color='k',linestyle='--')
+    ax = sns.boxplot(data=dataframe, x='benchmark', y='speedup', orient='v',
+                        ax=ax)
+    ax.set_xticklabels(dlabels)
+    ax.set_xlabel("")
+    #ax.set_ylabel("Speedup (Relative to $1^{st}$ Iteration)")
+    #ax.hlines(1.0,0,maxx,color='k',linestyle='--')
     if args.ylim is not None:
         ax.set_ylim(args.ylim)
-    ax.set_xlim((0,1))
-    ax.tick_params(axis='x',which='both',bottom=False,top=False,labelbottom=False,labeltop=False)
-    ax.legend()
+    #ax.set_xlim((0,1))
+    #ax.tick_params(axis='x',which='both',bottom=False,top=False,labelbottom=False,labeltop=False)
+    #ax.legend()
     if args.output is None:
         plt.show()
     else:
