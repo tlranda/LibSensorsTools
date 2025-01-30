@@ -1,9 +1,11 @@
 #!/bin/bash
 
-module add open-mpi;
+#module add open-mpi;
 
-mpi_call="time PMIX_MCA_pcompress_base_silence_warning=1 mpiexec -np 128 -host deepgreen:32,n05:48,n07:48"
-stream_bench="/tmp/./hpcc"
+#mpi_call="time PMIX_MCA_pcompress_base_silence_warning=1 mpiexec -np 128 -host deepgreen:32,n05:48,n07:48"
+mpi_call="time srun -n 56"
+#stream_bench="/tmp/./hpcc"
+stream_bench="/home/tlranda/benchmarks/hpcc/./hpcc"
 stream_args="";
 # Expect ~15m per execution
 n_times=1; # Default
@@ -33,7 +35,7 @@ for (( i=0; i<${n_times}; ++i )); do
     IFS="^";
     for cmd in ${composed[@]}; do
         echo "${cmd}";
-        eval "${cmd}";
+        #eval "${cmd}";
     done;
     # Ensure the end timestamp looks right in the data
     wait;

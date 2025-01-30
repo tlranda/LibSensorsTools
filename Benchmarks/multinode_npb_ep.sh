@@ -1,9 +1,10 @@
 #!/bin/bash
 
-module add open-mpi;
+#module add open-mpi;
 
-mpi_call="time mpiexec -np 128 -host deepgreen:32,n05:48,n07:48"
-stream_bench="/tmp/./ep.E.x"
+#mpi_call="time mpiexec -np 128 -host deepgreen:32,n05:48,n07:48"
+mpi_call="time srun -n 56"
+stream_bench="/home/tlranda/benchmarks/NPB3.4.3/NPB3.4-MPI/./bin/ep.D.x"
 stream_args="";
 # Expect ~14m per execution
 n_times=1; # Default

@@ -5,9 +5,10 @@ profiling_metrics="\"warp_execution_efficiency,gld_throughput,gst_throughput,dra
 profiling="";
 #profiling="nvprof --profile-child-processes --metrics ${profiling_metrics} --csv --log-file \"cuda_emogi_%h_%p.csv\"";
 
-stream_bench="benchmark_links/md5-bruteforcer/brute";
+#stream_bench="benchmark_links/md5-bruteforcer/brute";
+stream_bench="/home/tlranda/benchmarks/md5-bruteforcer/brute";
 n_times=1; # Default
-replication_factor=36; # Expand to mostly fill GPU memory
+replication_factor=45; # Expand to mostly fill GPU memory
 if [[ $# -eq 1 ]]; then
     echo "Setting n_times to $1";
     n_times=$1;
@@ -19,7 +20,7 @@ echo "Using replication factor ${replication_factor}";
 # Set strings once
 composed=();
 n_devices=$(nvidia-smi -L | wc -l);
-stream_args=$(tail -n 1 benchmark_links/md5-bruteforcer/arguments.txt);
+stream_args=$(tail -n 1 /home/tlranda/benchmarks/md5-bruteforcer/arguments.txt);
 for d in `nvidia-smi -L | awk '{print $NF}' | tr -d ')'`; do
     compose_command="CUDA_VISIBLE_DEVICES=${d} ${profiling} ${stream_bench} ${stream_args} >/dev/null &";
     echo "${compose_command}";

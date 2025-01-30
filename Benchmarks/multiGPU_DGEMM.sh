@@ -5,7 +5,8 @@ profiling_metrics="\"warp_execution_efficiency,gld_throughput,gst_throughput,dra
 profiling="";
 #profiling="nvprof --profile-child-processes --metrics ${profiling_metrics} --csv --log-file \"cuda_emogi_%h_%p.csv\"";
 
-stream_bench="benchmark_links/matrixMulCUBLAS2_dgemm";
+#stream_bench="benchmark_links/matrixMulCUBLAS2_dgemm";
+stream_bench="/home/tlranda/benchmarks/CUDA_DGEMM/matrixMulCUBLAS2";
 SIZE=22500;
 REPEATS=1000; # 1000 = 75 minutes per runtime
 if [[ ${#profiling} -gt 0 ]]; then

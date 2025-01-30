@@ -5,16 +5,17 @@ profiling_metrics="\"warp_execution_efficiency,gld_throughput,gst_throughput,dra
 profiling="";
 #profiling="nvprof --profile-child-processes --metrics ${profiling_metrics} --csv --log-file \"cuda_emogi_%h_%p.csv\"";
 
-stream_bench="/home/share/benchmarks/EMOGI/bfs";
+stream_bench="/home/tlranda/benchmarks/EMOGI/bfs";
 if [[ ${#profiling} -gt 0 ]]; then
     stream_args="-f ../Data/Synthesis/EMOGI_Synthesized/1_ll_5k_ele.bel -t 1 -m 0 -i 1";
     # Expect 12m with profiling
 else
-    stream_args="-f ../Data/Synthesis/EMOGI_Synthesized/1_ll_500k_ele.bel -t 1 -m 0 -i 1";
+    #stream_args="-f ../Data/Synthesis/EMOGI_Synthesized/1_ll_500k_ele.bel -t 1 -m 0 -i 1";
+    stream_args="-f ../Data/Synthesis/demo_list.bel -t 1 -m 0 -i 1";
     # Expect ~1m per iteration
 fi
 n_times=1; # Default
-replication_factor=36; # Expand to mostly fill GPU memory
+replication_factor=9; # Expand to mostly fill GPU memory
 if [[ $# -eq 1 ]]; then
     echo "Setting n_times to $1";
     n_times=$1;

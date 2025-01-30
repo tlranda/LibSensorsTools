@@ -5,15 +5,18 @@ profiling_metrics="\"warp_execution_efficiency,gld_throughput,gst_throughput,dra
 profiling="";
 #profiling="nvprof --profile-child-processes --metrics ${profiling_metrics} --csv --log-file \"cuda_stream_%h_%p.csv\"";
 
-stream_bench="/home/share/benchmarks/stream/cuda-stream";
+#stream_bench="/home/share/benchmarks/stream/cuda-stream";
+stream_bench="/home/tlranda/benchmarks/CUDA_STREAM/stream";
 if [[ ${#profiling} -gt 0 ]]; then
     #stream_args="-s 1024 -n 2";
     # Expect ~1 second per iteration w/o profiling
-    stream_args="-s 400000000 -n 2";
+    #stream_args="-s 400000000 -n 2";
+    stream_args="-s 502400000 -n 2";
     # Minimum value for -n is 2, use same -s value for similar kernel performance
     # Expect 4.5-10 minutes per iteration WITH profiling
 else
-    stream_args="-s 400000000 -n 1000";
+    #stream_args="-s 400000000 -n 1000";
+    stream_args="-s 502400000 -n 1000";
     # ^^ Expected ~90 seconds per iteration w/o profiling
     # 10 minutes: 7x
     # 15 minutes: 10x
