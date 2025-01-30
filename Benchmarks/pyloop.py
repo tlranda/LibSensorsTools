@@ -34,6 +34,7 @@ class CommandLooper:
         # Infinitely repeat the command until we terminate
         while not self.terminate:
             self.process = subprocess.Popen(cmd, start_new_session=True)
+            # Efficiently wait for process to end before looping
             self.process.wait()
             self.running = False
 
@@ -75,6 +76,7 @@ def main():
     signal.signal(signal.SIGINT, signal_handler)
     print("Hit enter to terminate looping...")
     command_thread.start()
+    # Command thread will restart the process as needed, this thread just signals it and should mostly sleep
     try:
         input()
     except (OSError, EOFError):

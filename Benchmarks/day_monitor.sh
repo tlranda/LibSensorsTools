@@ -16,7 +16,7 @@ execution_mode=$(( $# > 0 ));
 # Command to launch from server nodes
 #bench_command="sleep 3600";
 #bench_command="${path_to_git_repo}/Benchmarks/./sleep_counter.sh 4";
-#bench_command="${path_to_git_repo}/Benchmarks/./multiGPU_Stream.sh";
+bench_command="${path_to_git_repo}/Benchmarks/./multiGPU_Stream.sh";
 #bench_command="${path_to_git_repo}/Benchmarks/./multiGPU_EMOGI.sh";
 #bench_command="${path_to_git_repo}/Benchmarks/./multiGPU_DGEMM.sh";
 #bench_command="${path_to_git_repo}/Benchmarks/./multiGPU_md5_cracker.sh";
@@ -25,15 +25,15 @@ execution_mode=$(( $# > 0 ));
 #bench_command="${path_to_git_repo}/Benchmarks/./multinode_npb_is.sh";
 #bench_command="${path_to_git_repo}/Benchmarks/./multinode_npb_ep.sh";
 #bench_command="${path_to_git_repo}/Benchmarks/./multinode_hpcc.sh";
-bench_command="${path_to_git_repo}/Benchmarks/./run_two_pyloops.sh";
+#bench_command="${path_to_git_repo}/Benchmarks/./run_two_pyloops.sh";
 #bench_command="${path_to_git_repo}/Benchmarks/./multiGPU_mlperf_inference_resnet50.sh";
 # Client flags for tools to search for
-client_flags="cgsn";
+client_flags="cgo";
 # Arguments to control the sensing processes
 FORMAT="2";
 POLL="1";
 INITIAL_WAIT="1800"; # Half an hour
-POST_WAIT="86400"; # 24 hours
+POST_WAIT="21600"; # 21600 == 6 hours, 43200 == 12 hours, 86400 == 24 hours
 DEBUG_LEVEL="2";
 # Supply an output directory for all logs / error files from clients and servers
 today=`date +"%F_%T_%Z" | sed "s/[-:]/_/g"`;
@@ -41,18 +41,30 @@ outputdir="day_monitor/${today}";
 # Automatically make a subdirectory to prevent clobbering repeated runs (0=True, 1=False)
 unique_subdir=1;
 # Infinite loop the command (0=True, 1=False)
-infinite_loop=1;
+infinite_loop=0;
 # Shutoff for infinite loop (0=Manual, >0 is an actual timeout)
-infinite_timeout=""; # 8 hours (ie: 8am-4pm)
+infinite_timeout="28800"; # 28800 == 8 hours (ie: 8am-4pm)
 
 # Pair the server name and IP (name used for SSH-command launching, IP given to all clients)"
-server_list=( "deepgreen" );
-server_ip=( "172.16.10.1" );
+nodenames=()
+nodeips=()
+for node in $(echo $SLURM_JOB_NODELIST | sed -e 's/\[/\ /g' -e 's/\]/ /g' -e 's/,/ /g'); do
+	if [[ "${node}" == "node" ]]; then
+		continue;
+	fi;
+	nodenames+=("node${node}");
+	nodeips+=($(getent hosts "node${node}" | awk '{ print $1 }'));
+done;
 # Clients for servers (NOTE: Server IPs will be extended to match length of clients)
 # ie: servers=[A], clients=[B,C,D,E,F,G] ==> pairings={A: [B,C,D,E,F,G]}
 # ie: servers=[A,B], clients=[C,D,E,F,G] ==> pairings={A: [C,E,G], B: [D,F]}
-#client_list=( "deepgreen" );
-client_list=( "deepgreen" "n05" "n07" );
+server_list=( "${nodenames[0]}" );
+server_ip=( "${nodeips[0]}" );
+client_list=( "${nodenames[@]}" );
+# DEBUG ON PALMETTO LOGIN NODE:
+#server_list=( "vm-slurm-p-login02.palmetto.clemson.edu" );
+#server_ip=( "vm-slurm-p-login02.palmetto.clemson.edu" );
+#client_list=( "vm-slurm-p-login02.palmetto.clemson.edu" );
 
 # END PREAMBLE -- BELOW HERE LIES THE SCRIPT ITSELF
 ###################################################
@@ -106,10 +118,12 @@ for ((idx=0; idx < ${#server_ip[@]}; ++idx)); do
         insane=1;
     fi
     # Server program exists
-    server_exe="${path_to_git_repo}/SensorTools/build_${server_list[$idx]}/release/${server_list[$idx]}_sensors_server";
+    #server_exe="${path_to_git_repo}/SensorTools/build_${server_list[$idx]}/release/${server_list[$idx]}_sensors_server";
+    server_exe="${path_to_git_repo}/SensorTools/build_palmetto/release/palmetto_sensors_server";
     if [[ ! -f ${server_exe} || ! -x ${server_exe} ]]; then
         echo "Server executable for ${server_list[$idx]} not found or not executable!";
-        echo "Ensure you have built the CMake release version under the directory ${path_to_git_repo}/SensorTools/build_${server_list[$idx]}";
+        #echo "Ensure you have built the CMake release version under the directory ${path_to_git_repo}/SensorTools/build_${server_list[$idx]}";
+        echo "Ensure you have built the CMake release version under the directory ${path_to_git_repo}/SensorTools/build_palmetto";
         insane=1;
     else
         server_programs=( ${server_programs[@]} ${server_exe} );
@@ -119,10 +133,12 @@ done;
 client_programs=( );
 for ((idx=0; idx < ${#client_list[@]}; ++idx)); do
     # Server program exists
-    client_exe="${path_to_git_repo}/SensorTools/build_${client_list[$idx]}/release/${client_list[$idx]}_sensors";
+    #client_exe="${path_to_git_repo}/SensorTools/build_${client_list[$idx]}/release/${client_list[$idx]}_sensors";
+    client_exe="${path_to_git_repo}/SensorTools/build_palmetto/release/palmetto_sensors";
     if [[ ! -f ${client_exe} || ! -x ${client_exe} ]]; then
         echo "Client executable for ${client_list[$idx]} not found or not executable!";
-        echo "Ensure you have built the CMake release version under the directory ${path_to_git_repo}/SensorTools/build_${client_list[$idx]}";
+        #echo "Ensure you have built the CMake release version under the directory ${path_to_git_repo}/SensorTools/build_${client_list[$idx]}";
+        echo "Ensure you have built the CMake release version under the directory ${path_to_git_repo}/SensorTools/build_palmetto";
         insane=1;
     else
         client_programs=( ${client_programs[@]} ${client_exe} );
@@ -181,6 +197,7 @@ if [[ ${infinite_loop} -eq 0 ]]; then
         bench_command="timeout ${infinite_timeout} ${bench_command}";
     fi
 fi
+echo "Command to be benchmarked: ${bench_command}";
 
 # Set up servers
 server_template="";
