@@ -33,6 +33,9 @@ void parse(int argc, char** argv) {
             #ifdef BUILD_PDU
             {"pdu", no_argument, 0, 'P'},
             #endif
+	    #ifdef BUILD_OMREPORT
+	    {"omreport", no_argument, 0, 'o'},
+	    #endif
             {"ipaddr", required_argument, 0, 'I'},
             {"connections", required_argument, 0, 'C'},
         #else
@@ -66,6 +69,9 @@ void parse(int argc, char** argv) {
         #ifdef BUILD_PDU
         "P"
         #endif
+	#ifdef BUILD_OMREPORT
+	"o"
+	#endif
         "I:"
     #endif
     "C:f:l:L:p:i:w:t:d:v";
@@ -110,6 +116,10 @@ void parse(int argc, char** argv) {
                     std::cout << "\t-P | --pdu\n\t\t" <<
                                  "Query PDU readings over SNMP (default: Not queried)" << std::endl;
                     #endif
+		    #ifdef BUILD_OMREPORT
+		    std::cout << "\t-o | --omreport\n\t\t" <<
+		    		 "Query power readings via OMReport CLI (default: Not queried)" << std::endl;
+		    #endif
                     std::cout << "\t-I | --ipaddr\n\t\t" <<
                                  "IP address of a server to coordinate with (server controls start/stop of measurements and any applications)" << std::endl;
                     std::cout << "\t-C [value] | --connections [value]\n\t\t" <<
@@ -172,6 +182,11 @@ void parse(int argc, char** argv) {
                     args.pdu = true;
                     break;
                 #endif
+		#ifdef BUILD_OMREPORT
+		case 'o':
+		    args.omreport = true;
+		    break;
+		#endif
                 case 'I':
                     args.ip_addr = argv[optind-1];
                     break;

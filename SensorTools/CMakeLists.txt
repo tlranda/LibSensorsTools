@@ -1,23 +1,25 @@
 cmake_minimum_required(VERSION 3.20) # This may be overly-cautious, but is the tested version
 
 project(LibSensorTools
-    VERSION 0.3.0
+    VERSION 0.4.0
     DESCRIPTION "Composite library of sensing tools"
     HOMEPAGE_URL "https://github.com/tlranda/LibSensorsTools"
-    LANGUAGES CXX)
+    LANGUAGES CXX CUDA)
 
 # Some basic settings
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
 set(CMAKE_CXX_FLAGS_DEBUG_INIT "-Wall -g3")
 set(CMAKE_CXX_FLAGS_RELEASE_INIT "-Wall")
+#set(CMAKE_CXX_COMPILER "/software/slurm/spackages/linux-rocky8-x86_64/gcc-12.3.0/cuda-12.3.0-p2hoh7xwcu52zilqglv3nnc5bwnritue/bin/nvcc")
+#set(CUDA_HOST_COMPILER "/software/slurm/spackages/linux-rocky8-x86_64/gcc-12.2.0/gcc-13.2.0-syd6gd5bzt4ugi5fc6dh2efw46jakd6t/bin/gcc")
 
 # Ensure all driver and io files are copied over
 file(COPY driver DESTINATION "${CMAKE_CURRENT_BINARY_DIR}")
 file(COPY io DESTINATION "${CMAKE_CURRENT_BINARY_DIR}")
 file(COPY definitions.h DESTINATION "${CMAKE_CURRENT_BINARY_DIR}")
 file(COPY enums.h DESTINATION "${CMAKE_CURRENT_BINARY_DIR}")
-
+file(COPY ../LibNvme/ld_library_lnvme/usr/local/include DESTINATION "${CMAKE_CURRENT_BINARY_DIR}")
 
 # Sources for each exectuable
 # Server::
@@ -29,11 +31,12 @@ set(SERVER_LIBRARIES)
 set(LIBSENSORS_SOURCES io/timestamp_buf.cpp io/output.cpp io/argparse_libsensors.cpp driver/common_driver_libsensors.cpp)
 set(LIBSENSORS_LIBRARIES)
 # Options define which tools get built into libsensors
-option(BUILD_CPU "Build the lm-sensors tool" ON)
+option(BUILD_CPU "Build the lm-sensors tool" OFF)
 option(BUILD_GPU "Build the nvml tool" OFF)
 option(BUILD_SUBMER "Build the submer pod webapi tool" OFF)
 option(BUILD_NVME "Build the libnvme tool" OFF)
 option(BUILD_PDU "Build the snmp pdu tool" OFF)
+option(BUILD_OMREPORT "Build the omreport tool" OFF)
 # ALL tools building materials should live in the tools directory
 file(COPY tools DESTINATION "${CMAKE_CURRENT_BINARY_DIR}")
 # These instructions set up the various files for different tools
@@ -47,6 +50,8 @@ if (BUILD_GPU)
     file(GLOB gpu_sources tools/gpu/gpu_tools.cpp)
     set(LIBSENSORS_SOURCES ${LIBSENSORS_SOURCES} ${gpu_sources})
     set(LIBSENSORS_LIBRARIES ${LIBSENSORS_LIBRARIES} cuda cudart nvidia-ml)
+    #set(LIBSENSORS_LIBRARIES ${LIBSENSORS_LIBRARIES} cuda nvidia-ml)
+    link_directories(/software/slurm/spackages/linux-rocky8-x86_64/gcc-12.3.0/cuda-12.3.0-p2hoh7xwcu52zilqglv3nnc5bwnritue/lib64)
     add_compile_definitions(libsensors GPU_ENABLED)
 endif(BUILD_GPU)
 if (BUILD_SUBMER)
@@ -63,10 +68,15 @@ if (BUILD_PDU)
     file(GLOB pdu_sources tools/pdu/pdu_tools.cpp)
     set(LIBSENSORS_SOURCES ${LIBSENSORS_SOURCES} ${pdu_sources})
 endif(BUILD_PDU)
+if (BUILD_OMREPORT)
+    file(GLOB omreport_sources tools/omreport/omreport_tools.cpp)
+    set(LIBSENSORS_SOURCES ${LIBSENSORS_SOURCES} ${omreport_sources})
+endif(BUILD_OMREPORT)
 # ::Libsensors
 
 # Common compile options and linked libraries
 set(COMMON_OPTIONS -march=native -O3)
+#set(COMMON_OPTIONS -O3 -Xcompiler -std=c++17)
 set(COMMON_LIBRARIES m stdc++fs)
 set(COMMON_INCLUDE_DIRS ../submodules/nlohmann_json/single_include .)
 add_library(CommonSettings INTERFACE)
@@ -98,6 +108,7 @@ set(BUILD_GPU OFF)
 set(BUILD_SUBMER OFF)
 set(BUILD_NVME OFF)
 set(BUILD_PDU OFF)
+set(BUILD_OMREPORT OFF)
 set(SERVER_MAIN ON)
 configure_file(io/argparse_base.h io/argparse_server.h)
 configure_file(io/argparse_base.cpp io/argparse_server.cpp)

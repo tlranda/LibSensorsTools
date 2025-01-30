@@ -50,6 +50,9 @@ void init_libsensorstools(int argc, char** argv) {
     #ifdef BUILD_PDU
     // No libraries to initialize
     #endif
+    #ifdef BUILD_OMREPORT
+    // No libraries to initialize
+    #endif
 
     // Prepare for graceful shutdown via CTRL+C and other common signals
     struct sigaction sigHandler;
@@ -82,6 +85,9 @@ void init_libsensorstools(int argc, char** argv) {
                     #ifdef BUILD_PDU
                     "\t\"pdu\": " << args.pdu << "," << std::endl <<
                     #endif
+		    #ifdef BUILD_OMREPORT
+		    "\t\"omreport\": " << args.omreport << "," << std::endl <<
+		    #endif
                     #ifdef SERVER_MAIN
                     "\t\"clients\": " << args.clients << "," << std::endl <<
                     #else
@@ -125,6 +131,9 @@ void init_libsensorstools(int argc, char** argv) {
         #ifdef BUILD_PDU
         "PDU: " << args.pdu << std::endl <<
         #endif
+	#ifdef BUILD_OMREPORT
+	"OMReport: " << args.omreport << std::endl <<
+	#endif
         #ifdef SERVER_MAIN
         "Clients: " << args.clients << std::endl <<
         #else
@@ -139,7 +148,7 @@ void init_libsensorstools(int argc, char** argv) {
             case OutputHuman:
                 args.error_log << "human-readable";
                 break;
-            // case OutputJSON would not be reached
+            // case OutputJSON would not be reached by the surrounding code block
         }
         args.error_log << std::endl << "Log: " << args.log << std::endl <<
         "Error log: " << args.error_log << std::endl <<
@@ -184,6 +193,9 @@ void init_libsensorstools(int argc, char** argv) {
         #ifdef BUILD_PDU
         // No libraries to log
         #endif
+	#ifdef BUILD_OMREPORT
+	// No libraries to log
+	#endif
         args.log << "\t\"Nlohmann_Json\": \"" <<
                         NLOHMANN_JSON_VERSION_MAJOR << "." <<
                         NLOHMANN_JSON_VERSION_MINOR << "." <<
@@ -213,6 +225,9 @@ void init_libsensorstools(int argc, char** argv) {
         #ifdef BUILD_PDU
         // No libraries to log
         #endif
+	#ifdef BUILD_OMREPORT
+	// No libraries to log
+	#endif
         args.error_log << "Nlohmann_Json: " <<
                           NLOHMANN_JSON_VERSION_MAJOR << "." <<
                           NLOHMANN_JSON_VERSION_MINOR << "." <<
@@ -236,6 +251,9 @@ void init_libsensorstools(int argc, char** argv) {
     #endif
     #ifdef BUILD_PDU
     cache_pdus();
+    #endif
+    #ifdef BUILD_OMREPORT
+    cache_omreports();
     #endif
 
     #ifndef SERVER_MAIN
@@ -412,6 +430,13 @@ void print_csv_header() {
         }
     }
     #endif
+    #ifdef BUILD_OMREPORT
+    if (args.omreport) {
+    	for (std::vector<omreport_cache>::iterator i = known_omreports.begin(); i != known_omreports.end(); i++) {
+		args.log << ",omreport_" << i->id << "_watts,omreport_" << i->id << "_amps";
+	}
+    }
+    #endif
     args.log << std::endl;
 }
 
@@ -441,6 +466,9 @@ void shutdown(int signal = 0) {
     // No special shutdown needed
     #endif
     #ifdef BUILD_PDU
+    // No special shutdown needed
+    #endif
+    #ifdef BUILD_OMREPORT
     // No special shutdown needed
     #endif
     #ifdef SERVER_MAIN
@@ -513,6 +541,14 @@ int poll_cycle(std::chrono::time_point<std::chrono::system_clock> t0) {
         if (args.debug >= DebugVerbose) args.error_log << "PDUs have " << update << " / " << pdus_to_satisfy << " satisfied temperatures" << std::endl;
         satisfied += update;
         // satisfied += update_pdus();
+    }
+    #endif
+    #ifdef BUILD_OMREPORT
+    if (args.omreport) {
+    	int update = update_omreports();
+	if (args.debug >= DebugVerbose) args.error_log << "OMReport shows " << update << " / " << omreports_to_satisfy << " satisfied sensors" << std::endl;
+	satisfied += update;
+	// satisfied += update_omreports();
     }
     #endif
     #ifdef SERVER_MAIN
@@ -711,6 +747,9 @@ void set_initial_temperatures() {
     #ifdef BUILD_PDU
     // Not a temperature unit, nothing to do
     #endif
+    #ifdef BUILD_OMREPORT
+    // Not a temperature unit, nothing to do
+    #endif
 }
 
 int get_n_to_satisfy() {
@@ -729,6 +768,9 @@ int get_n_to_satisfy() {
     #endif
     #ifdef BUILD_PDU
     satisfy += pdus_to_satisfy;
+    #endif
+    #ifdef BUILD_OMREPORT
+    satisfy += omreports_to_satisfy;
     #endif
     return satisfy;
 }

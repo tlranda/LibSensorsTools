@@ -11,6 +11,7 @@
 #cmakedefine BUILD_SUBMER
 #cmakedefine BUILD_NVME
 #cmakedefine BUILD_PDU
+#cmakedefine BUILD_OMREPORT
 #cmakedefine SERVER_MAIN
 
 #include "output.h" // Output class definition
@@ -44,6 +45,9 @@ typedef struct argstruct {
              #ifdef BUILD_PDU
              pdu = 0,
              #endif
+	     #ifdef BUILD_OMREPORT
+	     omreport = 0,
+	     #endif
          #endif
          version = 0,
          shutdown = 0;
@@ -76,6 +80,9 @@ typedef struct argstruct {
             #ifdef BUILD_PDU
             ret = ret | pdu;
             #endif
+	    #ifdef BUILD_OMREPORT
+	    ret = ret | omreport;
+	    #endif
         #endif
         return ret;
     }
@@ -99,6 +106,9 @@ typedef struct argstruct {
                 #ifdef BUILD_PDU
                 pdu = 1;
                 #endif
+		#ifdef BUILD_OMREPORT
+		omreport = 1;
+		#endif
             #endif
             #endif
         #endif

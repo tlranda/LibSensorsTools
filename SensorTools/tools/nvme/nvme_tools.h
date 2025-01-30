@@ -1,7 +1,7 @@
 // Headers and why they're included
 // Document necessary compiler flags beside each header as needed in full-line comment below the header
 #include <vector> // vector type and operations
-#include <libnvme.h> // Read NVME device temperatures
+#include "libnvme.h" // Read NVME device temperatures
 // Must compile with: -lnvme
 #include "io/argparse_libsensors.h" // Debug levels, arguments, Output class
 // End Headers
