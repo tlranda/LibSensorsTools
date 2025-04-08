@@ -168,7 +168,7 @@ def prune_temps(args, temps):
         new_temps.append(temp)
     return new_temps
 
-def mean_var_edit(temps, latekey=False):
+def mean_var_edit(temps, latekey=False, args=None):
     new_temps = dict()
     # We group on the labels according to the format:
     # Filename tool[-ID-other-information]
@@ -176,7 +176,12 @@ def mean_var_edit(temps, latekey=False):
     # Filename tool[-ID]-other-part-of-tool
     for temp in temps:
         fname, tool_id = temp.label.split(' ',1)
-        tool, identifier, other = tool_id.split('-',2)
+        try:
+            tool, identifier, other = tool_id.split('-',2)
+        except:
+            print(fname, tool_id, "-- cannot be mean-var'd")
+            new_temps[(temp.label,"",str(temp.directory))] = [temp]
+            continue
         directory = temp.directory
         if directory is not None:
             # Fix key bug on pathlib.*Path
@@ -198,14 +203,18 @@ def mean_var_edit(temps, latekey=False):
         # This should not be necessary as observations should be uniform, but I'm leaving this in as
         # an abundance of caution / freedom to change design later
         # Printed notice informs user if padding actually has an affect on data presentation
-        print(f"Padding increases for {key}: {lens-maxlen}")
+        new_label = " ".join(key)
+        if args is not None:
+            if new_label in args.rename_labels:
+                new_label = args.rename_labels[new_label]
+        print(f"Padding increases for {new_label}: {lens-maxlen}")
         data = [np.pad(_.data, (0, maxlen-lens[idx]),'constant',constant_values=(0,_.data[-1]))
                 for idx, _ in enumerate(new_temps[key])]
         data = np.atleast_2d(data)
         meandata = data.mean(axis=0)
         low_variance = data.min(axis=0)
         high_variance = data.max(axis=0)
-        new_temps[key] = VarianceData(timestamps, label=" ".join(key), data=meandata, directory=key[2],
+        new_temps[key] = VarianceData(timestamps, label=new_label, data=meandata, directory=key[2],
                                       low_variance=low_variance, high_variance=high_variance)
     return list(new_temps.values())
 
@@ -313,8 +322,8 @@ def get_temps_and_traces(args, paths, postprocess=True, baseline=None):
         if baseline is not None:
             temps = apply_baseline(temps, baseline)
         if args.mean_var:
-            temps = mean_var_edit(temps)
-            others = mean_var_edit(others, latekey=True)
+            temps = mean_var_edit(temps, args=args)
+            others = mean_var_edit(others, latekey=True, args=args)
     return temps, traces, others
 
 def thermal_ranges_compute(temperature_data, traces, others, baseline_temperatures, args):
@@ -347,8 +356,8 @@ def thermal_ranges_compute(temperature_data, traces, others, baseline_temperatur
             else:
                 hwdict[label] = {'init_data': [_ for _ in init_temps]}
             baseline = init_temps.mean()
-            if args.mean_var and t.high_variance is not None:
-                tdata = np.asarray(t.high_variance)
+            #if args.mean_var and t.high_variance is not None:
+            #    tdata = np.asarray(t.high_variance)
             # Application slope requires min/max point and timespan
             # Application max based on DELTA OVER BASELINE
             app_temps = tdata[time_idx[0]:time_idx[1]]
@@ -693,29 +702,42 @@ def heat_delta_detection(temperature_data, traces, others, baseline_temperatures
 def workload_classification_postprocess(auxdict, args):
     # Map keys to class groupings
     tag_map = {'GPU-centric': ['Stream','EMOGI','DGEMM','MD5_Bruteforcer','MD5_Cracker','Heterogeneous'],
-               'CPU-centric': ['NPB_EP','NPB_DT','NPB_IS','HPCC','Heterogeneous'],
+               'CPU-centric': ['NPB_DT','NPB_IS','NPB_EP','HPL','Heterogeneous'],
                'Memory-bound': ['Stream','EMOGI','NPB_DT','NPB_IS'],
-               'Compute-bound': ['DGEMM','NPB_EP','HPCC','Heterogeneous'],
+               'Compute-bound': ['DGEMM','MD5_Bruteforcer','NPB_EP','HPL','Heterogeneous',],
                #'Crypto': ['MD5_Bruteforcer','MD5_Cracker'],
                }
     tag_groupings = dict((k,dict()) for k in tag_map.keys())
+    auxconvertkeys = [str(k) for k in auxdict.keys()]
     for tag_key, tag_lookups in tag_map.items():
-        np_tags = np.asarray(tag_lookups)
-        for dname, period_info in auxdict.items():
-            strdname = str(dname)
-            lookups = [tag in strdname for tag in tag_lookups]
-            if any(lookups):
-                #print(f"Identify {strdname} as {tag_key} data based on {np_tags[lookups][0]}")
-                tag_groupings[tag_key][np_tags[lookups][0]] = period_info
+        for tag in tag_lookups:
+            for key in auxconvertkeys:
+                if tag not in key:
+                    continue
+                period_info = auxdict[pathlib.Path(key)]
+                tag_groupings[tag_key][tag] = period_info
+        #for dname, period_info in auxdict.items():
+        #    strdname = str(dname)
+        #    lookups = [tag in strdname for tag in tag_lookups]
+        #    if any(lookups):
+        #        #print(f"Identify {strdname} as {tag_key} data based on {np_tags[lookups][0]}")
+        #        tag_groupings[tag_key][np_tags[lookups][0]] = period_info
     # Use grouped data to make the plot
-    fig, axs = plt.subplots(1, 1, figsize=(12,6))
+    # Do a 20-80 vertical split for outliers -- plot data on both axes!
+    fig, (axs1,axs2) = plt.subplots(2, 1, sharex=True,
+                                    gridspec_kw={'height_ratios':[2,8]},
+                                    constrained_layout=False,
+                                    #tight_layout=False,
+                                    figsize=(12,6))
     x_ind = 0
     min_height, max_height = np.inf, -np.inf
+    heights = []
     vlines = []
     centered = []
     for (metatag, scatters) in tag_groupings.items():
         if x_ind > 0:
-            vlines.append(axs.vlines(x_ind-1, 0, 1, color='k'))
+            vlines.append(axs1.vlines(x_ind-1, 0, 1, color='k'))
+            vlines.append(axs2.vlines(x_ind-1, 0, 1, color='k'))
         n_entries = len(scatters.keys())
         if n_entries == 0:
             continue
@@ -728,37 +750,57 @@ def workload_classification_postprocess(auxdict, args):
             y_ext = [v['analysis']['s/C'] for v in value if 'application' in v['name']]
             max_height = max(max_height, max(y_ext))
             min_height = min(min_height, min(y_ext))
+            heights.append(max(y_ext))
             y_vals.extend(y_ext)
             labels.extend(l_ext)
         x_vals = range(x_ind,x_ind+len(y_vals))
         centered.append(x_ind+(len(y_vals)/2) - 0.5)
         x_ind += len(y_vals)+1
-        #axs.scatter(x_vals,y_vals,label=labels)
-        axs.bar(x_vals,y_vals,label=labels)
+        #axs1.scatter(x_vals,y_vals,label=labels)
+        #axs2.scatter(x_vals,y_vals,label=labels)
+        axs1.bar(x_vals,y_vals,label=labels)
+        axs2.bar(x_vals,y_vals,label=labels)
         y_min = min(y_vals)
         for (x,y,label) in zip(x_vals, y_vals,labels):
-            axs.text(x+0.3,y_min,relabel(label if '_' not in label else label.split('_')[-1],args.rename_labels),rotation_mode='anchor',rotation=90,horizontalalignment='left',verticalalignment='bottom')
+            axs2.text(x+0.3,y_min,relabel(label if '_' not in label else label.split('_')[-1],args.rename_labels),rotation_mode='anchor',rotation=90,horizontalalignment='left',verticalalignment='bottom')
     # Fix vline heights after the fact
     for vline in vlines:
         old_segments = vline.get_segments()
         old_segments[0][0][-1] = min(min_height,0)
         old_segments[0][-1][-1] = max_height
         vline.set_segments(old_segments)
-    axs.set_ylim([0.95*min_height,1.05*max_height])
-    axs.set_ylabel('Seconds to Raise Coolant Temperature\nby One Degree Celsius')
-    axs.set_xticks(centered)
-    axs.set_xticklabels(tag_groupings.keys())
+    max_non_outlier_height = sorted(heights)[-3]
+    axs1.set_ylim([1.05*max_non_outlier_height,1.05*max_height])
+    axs2.set_ylim([0.95*min_height,1.05*max_non_outlier_height])
+    # Hide spines
+    axs1.spines.bottom.set_visible(False)
+    axs2.spines.top.set_visible(False)
+    axs1.set_xticks([])
+    axs2.xaxis.tick_bottom()
+    # Cut-out slanted lines
+    cut_kwargs = dict(marker=[(-1, -.5), (1, .5)], markersize=12, linestyle="none",
+                      color='k', mec='k', mew=1, clip_on=False)
+    axs1.plot([0,1],[0,0], transform=axs1.transAxes,**cut_kwargs)
+    axs2.plot([0,1],[1,1], transform=axs2.transAxes,**cut_kwargs)
+    ylabel_text = 'Seconds to Raise Coolant Temperature\nby One Degree Celsius'
+    #axs1.set_ylabel(ylabel_text)
+    fig.text(0.06,0.5,ylabel_text,va='center',ha='center',rotation='vertical',fontsize=16)
+    #fig.supylabel(ylabel_text, y=0.5, x=0.0, fontsize=16, ha='center')
+    axs2.set_xticks(centered)
+    axs2.set_xticklabels(tag_groupings.keys())
+    # Stupid thing doesn't calculate bounds correctly
+    #fig.subplots_adjust(left=0.15, right=1.0)
     if not args.no_legend:
         hmap = {Line2D: HandlerLine2D(),
                 Patch: HandlerPatch(),
                 LineCollection: CustomLineCollectionHandler()}
         if args.legend_position == 'outside':
-            axs.legend(handler_map=hmap,
+            axs1.legend(handler_map=hmap,
                       loc='center left', bbox_to_anchor=(1.0, 0.5))
         else:
-            axs.legend(handler_map=hmap,
+            axs1.legend(handler_map=hmap,
                       loc=args.legend_position)
-    axs = [axs]
+    axs = [axs1,axs2]
     return fig, axs
 
 def make_auxinfo_dict(temperature_data, traces, others, baseline_temperatures, args):
@@ -865,7 +907,7 @@ def main(args=None):
             x_range = (args.x_range[0], min(max([max(t.timestamp) for t in temperature_data]+[t.timestamp for t in traces]), args.x_range[1]))
         for ax in axs:
             ax.set_xlim(x_range)
-    plt.tight_layout()
+    #plt.tight_layout()
     if fig is not None:
         if args.output is None:
             plt.show()
