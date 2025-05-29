@@ -233,6 +233,8 @@ def get_delta_points(temps, time, start, end, others):
         raise ValueError
 
 def main(args=None):
+    # REMINDER: Need a server.json for app timings and the client.json that monitored submer
+    # REMINDER: Need a nontemperature flag to pull the submer rpm data
     args = parse(args)
     temperature_data, traces, others = get_temps_and_traces(args, args.inputs, postprocess=True)
     # Find the pump cycle indicator
@@ -276,10 +278,10 @@ def main(args=None):
             npdt = np.asarray(o.data)
             inds = np.where(np.logical_and(npts >= text[0], npts < text[1]))[0]
             activity[o.label].append(npdt[inds])
+    # Pair temperature delta with activity
     import pdb
     pdb.set_trace()
-    # Pair temperature delta with activity
-    tdeltas = [t.max()-t.min() for t in temperature]
+    tdeltas = [list(t.max()-t.min() for t in v) for v in temperature.values()]
 
     fig, axs = None, None
     plt.tight_layout()
