@@ -27,6 +27,10 @@ bench_command="${path_to_git_repo}/Benchmarks/./multiGPU_Stream.sh";
 #bench_command="${path_to_git_repo}/Benchmarks/./multinode_hpcc.sh";
 #bench_command="${path_to_git_repo}/Benchmarks/./run_two_pyloops.sh";
 #bench_command="${path_to_git_repo}/Benchmarks/./multiGPU_mlperf_inference_resnet50.sh";
+if [[ "${BENCH-0}" != "0" ]]; then
+  bench_command="${BENCH}";
+  echo "Overriding bench command to be '${bench_command}'";
+fi
 # Client flags for tools to search for
 client_flags="cgo";
 # Arguments to control the sensing processes
@@ -39,7 +43,7 @@ DEBUG_LEVEL="2";
 today=`date +"%F_%T_%Z" | sed "s/[-:]/_/g"`;
 outputdir="day_monitor/${today}";
 # Automatically make a subdirectory to prevent clobbering repeated runs (0=True, 1=False)
-unique_subdir=1;
+unique_subdir=0;
 # Infinite loop the command (0=True, 1=False)
 infinite_loop=0;
 # Shutoff for infinite loop (0=Manual, >0 is an actual timeout)
@@ -48,7 +52,8 @@ infinite_timeout="28800"; # 28800 == 8 hours (ie: 8am-4pm)
 # Pair the server name and IP (name used for SSH-command launching, IP given to all clients)"
 nodenames=()
 nodeips=()
-for node in $(echo $SLURM_JOB_NODELIST | sed -e 's/\[/\ /g' -e 's/\]/ /g' -e 's/,/ /g'); do
+# $(echo $SLURM_JOB_NODELIST | sed -e 's/\[/\ /g' -e 's/\]/ /g' -e 's/,/ /g')
+for node in "0091" "0048" ; do
 	if [[ "${node}" == "node" ]]; then
 		continue;
 	fi;
@@ -208,7 +213,7 @@ for (( idx=0; idx < ${#server_list[@]}; ++idx)); do
     server_cmd="${server_programs[$idx]} -f ${FORMAT} -l ${outputdir}/${server_list[$idx]}_server.${EXTENSION} -L ${outputdir}/${server_list[$idx]}_server.error -p ${POLL} -i ${INITIAL_WAIT} -w ${POST_WAIT} -d ${DEBUG_LEVEL} -C $n_clients -t 60 -- ${bench_command} &";
     if [[ ${server_list[$idx]} != ${HOSTNAME} ]]; then
         echo "Add ssh for this command";
-        server_cmd="ssh ${server_list[$idx]} ${server_cmd}";
+        server_cmd="ssh ${server_list[$idx]} /home/tlranda/grad/LibSensors/./with_env.sh ${server_cmd}";
     fi
     echo "${server_cmd}";
     if [[ ${execution_mode} -eq 0 ]]; then
@@ -239,7 +244,7 @@ for (( idx=0; idx < ${#client_list[@]}; ++idx)); do
     fi
     if [[ ${client_list[$idx]} != ${HOSTNAME} ]]; then
         echo -e "\tAdd ssh for this command";
-        client_cmd="ssh ${client_list[$idx]} ${client_cmd}";
+        client_cmd="ssh ${client_list[$idx]} /home/tlranda/grad/LibSensors/./with_env.sh ${client_cmd}";
     fi
     echo "${client_cmd}";
     if [[ ${execution_mode} -eq 0 ]]; then
