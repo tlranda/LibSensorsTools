@@ -1,3 +1,5 @@
 # Add any soft links here so git doesn't want to version-control them
 .gitignore
+day_monitor/
+hpccoutf*.txt
 

@@ -11,7 +11,7 @@ if [[ ${#profiling} -gt 0 ]]; then
     # Expect 12m with profiling
 else
     #stream_args="-f ../Data/Synthesis/EMOGI_Synthesized/1_ll_500k_ele.bel -t 1 -m 0 -i 1";
-    stream_args="-f ../Data/Synthesis/demo_list.bel -t 1 -m 0 -i 1";
+    stream_args="-f /home/tlranda/grad/LibSensors/Data/Synthesis/demo_list.bel -t 1 -m 0 -i 1";
     # Expect ~1m per iteration
 fi
 n_times=1; # Default
